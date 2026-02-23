@@ -1,0 +1,552 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Chip2Unlock · Admin Panel</title>
+    <!-- Bootstrap 5 (dark theme customised) -->
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0-alpha1/dist/css/bootstrap.min.css" rel="stylesheet">
+    <!-- Font Awesome for icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+    <!-- Firebase SDK (compat) -->
+    <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-auth-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-firestore-compat.js"></script>
+    <style>
+        body {
+            background-color: #0a0c0f;
+            color: #e9ecef;
+            font-family: 'Inter', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+        }
+        .card {
+            background-color: #13181d;
+            border: 1px solid #2a343c;
+            border-radius: 20px;
+            box-shadow: 0 8px 0 #0b0f12;
+        }
+        .card-header {
+            background-color: #1e262e;
+            color: #b0c4d9;
+            border-bottom: 1px solid #2a343c;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            border-radius: 20px 20px 0 0 !important;
+        }
+        .form-control, .form-select {
+            background-color: #1e262e;
+            border: 1px solid #2f3b45;
+            color: #e9ecef;
+            border-radius: 12px;
+            padding: 12px 16px;
+        }
+        .form-control:focus, .form-select:focus {
+            background-color: #262f3a;
+            border-color: #4f9cff;
+            box-shadow: 0 0 0 0.25rem rgba(79, 156, 255, 0.25);
+            color: #fff;
+        }
+        .form-label {
+            color: #95aec9;
+            font-weight: 500;
+            margin-bottom: 6px;
+        }
+        .btn-primary {
+            background-color: #2d5a9a;
+            border: none;
+            border-bottom: 3px solid #1d3b64;
+            border-radius: 40px;
+            padding: 12px 24px;
+            font-weight: 600;
+            transition: 0.15s;
+        }
+        .btn-primary:hover {
+            background-color: #356bb0;
+            transform: translateY(-1px);
+        }
+        .btn-danger {
+            background-color: #8b2c2c;
+            border: none;
+            border-bottom: 3px solid #5e1e1e;
+            border-radius: 40px;
+            padding: 6px 16px;
+            font-weight: 500;
+        }
+        .btn-outline-secondary {
+            border-color: #3f5e7a;
+            color: #a9d0ff;
+            border-radius: 40px;
+        }
+        .btn-outline-secondary:hover {
+            background-color: #1e3a5a;
+            border-color: #4f9cff;
+            color: white;
+        }
+        .table {
+            color: #e9ecef;
+            border-color: #2a343c;
+        }
+        .table thead th {
+            color: #95aec9;
+            font-weight: 500;
+            border-bottom-color: #2a343c;
+        }
+        .table td {
+            vertical-align: middle;
+        }
+        .badge-tool {
+            background-color: #1e3a2a;
+            color: #9ace9a;
+            padding: 4px 10px;
+            border-radius: 40px;
+            font-size: 0.8rem;
+            margin-right: 4px;
+        }
+        .login-container {
+            max-width: 400px;
+            margin: 80px auto;
+        }
+        .hidden {
+            display: none;
+        }
+        .action-icons i {
+            cursor: pointer;
+            margin: 0 6px;
+            font-size: 1.2rem;
+        }
+        .action-icons .fa-edit { color: #4f9cff; }
+        .action-icons .fa-trash { color: #f28b82; }
+        .tool-checkbox-group {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 15px;
+            margin-top: 8px;
+        }
+        .tool-checkbox-group .form-check {
+            background: #1e262e;
+            padding: 8px 16px;
+            border-radius: 40px;
+            border: 1px solid #2f3b45;
+        }
+        .tool-checkbox-group .form-check-input {
+            margin-right: 6px;
+            background-color: #2f3b45;
+            border-color: #4f658d;
+        }
+        .tool-checkbox-group .form-check-input:checked {
+            background-color: #2d5a9a;
+            border-color: #4f9cff;
+        }
+    </style>
+</head>
+<body>
+
+    <!-- Login Screen -->
+    <div id="loginContainer" class="login-container">
+        <div class="card">
+            <div class="card-header text-center">
+                <i class="fas fa-lock me-2"></i>Admin Login
+            </div>
+            <div class="card-body">
+                <div class="mb-3">
+                    <label class="form-label">Email address</label>
+                    <input type="email" id="loginEmail" class="form-control" placeholder="admin@gsm.com">
+                </div>
+                <div class="mb-3">
+                    <label class="form-label">Password</label>
+                    <input type="password" id="loginPassword" class="form-control" placeholder="••••••••">
+                </div>
+                <button id="loginBtn" class="btn btn-primary w-100">Log In</button>
+                <div id="loginError" class="text-danger mt-3 small"></div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Main Dashboard (hidden until login) -->
+    <div id="dashboard" class="container-fluid py-4 hidden">
+        <!-- Header with logout -->
+        <div class="d-flex justify-content-between align-items-center mb-4">
+            <h2><i class="fas fa-microchip me-2"></i>Chip2Unlock Admin</h2>
+            <button id="logoutBtn" class="btn btn-outline-secondary"><i class="fas fa-sign-out-alt me-2"></i>Logout</button>
+        </div>
+
+        <div class="row g-4">
+            <!-- Add Device Card -->
+            <div class="col-md-6">
+                <div class="card h-100">
+                    <div class="card-header">
+                        <i class="fas fa-mobile-alt me-2"></i>Add / Edit Device
+                    </div>
+                    <div class="card-body">
+                        <form id="deviceForm">
+                            <input type="hidden" id="deviceId" value="">
+                            <div class="mb-3">
+                                <label class="form-label">Brand</label>
+                                <select class="form-select" id="brand" required>
+                                    <option value="">Select Brand</option>
+                                    <option value="Samsung">Samsung</option>
+                                    <option value="Xiaomi">Xiaomi</option>
+                                    <option value="OnePlus">OnePlus</option>
+                                    <option value="Oppo">Oppo</option>
+                                    <option value="Vivo">Vivo</option>
+                                    <option value="Realme">Realme</option>
+                                    <option value="Motorola">Motorola</option>
+                                    <option value="Google">Google</option>
+                                    <option value="Apple">Apple</option>
+                                </select>
+                            </div>
+                            <div class="mb-3">
+                                <label class="form-label">Model (e.g., SM-S918B)</label>
+                                <input type="text" class="form-control" id="model" placeholder="SM-S918B" required>
+                            </div>
+                            <div class="mb-3">
+                                <label class="form-label">CPU (full name, e.g., Qualcomm Snapdragon 8 Gen 2)</label>
+                                <input type="text" class="form-control" id="cpu" placeholder="Qualcomm Snapdragon 8 Gen 2" required>
+                            </div>
+                            <div class="mb-3">
+                                <label class="form-label">Android Version (optional)</label>
+                                <input type="text" class="form-control" id="androidVersion" placeholder="13">
+                            </div>
+                            <div class="row">
+                                <div class="col-md-6 mb-3">
+                                    <label class="form-label">Security Patch Min (YYYY-MM-DD)</label>
+                                    <input type="date" class="form-control" id="securityPatchMin">
+                                </div>
+                                <div class="col-md-6 mb-3">
+                                    <label class="form-label">Security Patch Max (YYYY-MM-DD)</label>
+                                    <input type="date" class="form-control" id="securityPatchMax">
+                                </div>
+                            </div>
+                            <button type="submit" class="btn btn-primary" id="saveDeviceBtn">
+                                <i class="fas fa-save me-2"></i>Save Device
+                            </button>
+                            <button type="button" class="btn btn-outline-secondary ms-2" id="resetDeviceBtn">
+                                <i class="fas fa-times me-2"></i>Cancel
+                            </button>
+                        </form>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Add Operation Matrix Card -->
+            <div class="col-md-6">
+                <div class="card h-100">
+                    <div class="card-header">
+                        <i class="fas fa-project-diagram me-2"></i>Add Operation Matrix
+                    </div>
+                    <div class="card-body">
+                        <form id="operationForm">
+                            <div class="mb-3">
+                                <label class="form-label">Select Device</label>
+                                <select class="form-select" id="opDeviceId" required>
+                                    <option value="">Choose a device</option>
+                                    <!-- filled dynamically -->
+                                </select>
+                            </div>
+                            <div class="mb-3">
+                                <label class="form-label">Operation Type</label>
+                                <select class="form-select" id="opType" required>
+                                    <option value="FRP">FRP</option>
+                                    <option value="Auth Flash">Auth Flash</option>
+                                    <option value="Mi Account Remove">Mi Account Remove</option>
+                                    <option value="Read Info">Read Info</option>
+                                    <option value="Write Firmware">Write Firmware</option>
+                                </select>
+                            </div>
+                            <div class="mb-3">
+                                <label class="form-label">Required Mode</label>
+                                <select class="form-select" id="opMode" required>
+                                    <option value="EDL">EDL</option>
+                                    <option value="BROM">BROM</option>
+                                    <option value="Preloader">Preloader</option>
+                                    <option value="Fastboot">Fastboot</option>
+                                    <option value="Test Point">Test Point</option>
+                                    <option value="MTP">MTP</option>
+                                </select>
+                            </div>
+                            <div class="mb-3">
+                                <label class="form-label">Tools Supported</label>
+                                <div class="tool-checkbox-group">
+                                    <div class="form-check">
+                                        <input class="form-check-input" type="checkbox" value="UnlockTool" id="tool1">
+                                        <label class="form-check-label" for="tool1">UnlockTool</label>
+                                    </div>
+                                    <div class="form-check">
+                                        <input class="form-check-input" type="checkbox" value="UMT" id="tool2">
+                                        <label class="form-check-label" for="tool2">UMT</label>
+                                    </div>
+                                    <div class="form-check">
+                                        <input class="form-check-input" type="checkbox" value="Hydra" id="tool3">
+                                        <label class="form-check-label" for="tool3">Hydra</label>
+                                    </div>
+                                    <div class="form-check">
+                                        <input class="form-check-input" type="checkbox" value="Chimera" id="tool4">
+                                        <label class="form-check-label" for="tool4">Chimera</label>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="mb-3">
+                                <label class="form-label">Success Rate</label>
+                                <select class="form-select" id="opSuccess" required>
+                                    <option value="High">High</option>
+                                    <option value="Medium">Medium</option>
+                                    <option value="Low">Low</option>
+                                    <option value="Experimental">Experimental</option>
+                                </select>
+                            </div>
+                            <div class="mb-3">
+                                <label class="form-label">Test Point Image URL (optional)</label>
+                                <input type="url" class="form-control" id="testPointUrl" placeholder="https://example.com/image.jpg">
+                            </div>
+                            <button type="submit" class="btn btn-primary">
+                                <i class="fas fa-plus-circle me-2"></i>Add Operation
+                            </button>
+                        </form>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Devices Table -->
+        <div class="card mt-4">
+            <div class="card-header">
+                <i class="fas fa-database me-2"></i>Devices List
+            </div>
+            <div class="card-body">
+                <div class="table-responsive">
+                    <table class="table table-hover">
+                        <thead>
+                            <tr>
+                                <th>Brand</th>
+                                <th>Model</th>
+                                <th>CPU</th>
+                                <th>Android</th>
+                                <th>Patch Range</th>
+                                <th>Operations</th>
+                                <th>Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody id="devicesTableBody">
+                            <tr><td colspan="7" class="text-center text-secondary">Loading...</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // ========== FIREBASE CONFIG (REPLACE WITH YOUR OWN) ==========
+        const firebaseConfig = {
+            apiKey: "AIzaSyDmwtPoZuKgEBc_lgIDMoBHF1ZwObhAnl8",
+            authDomain: "phunlocker-c6fc4.firebaseapp.com",
+            projectId: "phunlocker-c6fc4",
+            storageBucket: "phunlocker-c6fc4.firebasestorage.app",
+            messagingSenderId: "616452799409",
+            appId: "1:616452799409:web:2bbb5fb74c96cbbb571b90"
+        };
+        firebase.initializeApp(firebaseConfig);
+        const auth = firebase.auth();
+        const db = firebase.firestore();
+
+        // ========== GLOBAL ==========
+        let currentDeviceId = null; // for editing
+
+        // ========== AUTH STATE ==========
+        auth.onAuthStateChanged(user => {
+            if (user) {
+                document.getElementById('loginContainer').classList.add('hidden');
+                document.getElementById('dashboard').classList.remove('hidden');
+                loadDevices();
+                loadDeviceDropdown();
+            } else {
+                document.getElementById('loginContainer').classList.remove('hidden');
+                document.getElementById('dashboard').classList.add('hidden');
+            }
+        });
+
+        // ========== LOGIN ==========
+        document.getElementById('loginBtn').addEventListener('click', () => {
+            const email = document.getElementById('loginEmail').value;
+            const password = document.getElementById('loginPassword').value;
+            auth.signInWithEmailAndPassword(email, password)
+                .catch(error => {
+                    document.getElementById('loginError').innerText = error.message;
+                });
+        });
+
+        // ========== LOGOUT ==========
+        document.getElementById('logoutBtn').addEventListener('click', () => {
+            auth.signOut();
+        });
+
+        // ========== LOAD DEVICES TABLE ==========
+        async function loadDevices() {
+            const tbody = document.getElementById('devicesTableBody');
+            tbody.innerHTML = '<tr><td colspan="7" class="text-center text-secondary">Loading...</td></tr>';
+
+            try {
+                const snapshot = await db.collection('devices').orderBy('brand').get();
+                if (snapshot.empty) {
+                    tbody.innerHTML = '<tr><td colspan="7" class="text-center text-secondary">No devices yet.</td></tr>';
+                    return;
+                }
+
+                let html = '';
+                for (const doc of snapshot.docs) {
+                    const d = doc.data();
+                    const deviceId = doc.id;
+                    // Count operations
+                    const opsSnap = await db.collection('operations').where('deviceId', '==', deviceId).count().get();
+                    const opCount = opsSnap.data().count;
+                    const patchRange = d.securityPatchMin ? `${d.securityPatchMin} to ${d.securityPatchMax}` : '—';
+                    html += `<tr>
+                        <td>${d.brand}</td>
+                        <td>${d.model}</td>
+                        <td>${d.cpu || ''}</td>
+                        <td>${d.androidVersion || ''}</td>
+                        <td>${patchRange}</td>
+                        <td>${opCount}</td>
+                        <td class="action-icons">
+                            <i class="fas fa-edit" onclick="editDevice('${deviceId}', '${d.brand}', '${d.model}', '${d.cpu || ''}', '${d.androidVersion || ''}', '${d.securityPatchMin || ''}', '${d.securityPatchMax || ''}')"></i>
+                            <i class="fas fa-trash" onclick="deleteDevice('${deviceId}')"></i>
+                        </td>
+                    </tr>`;
+                }
+                tbody.innerHTML = html;
+            } catch (error) {
+                tbody.innerHTML = `<tr><td colspan="7" class="text-danger">Error: ${error.message}</td></tr>`;
+            }
+        }
+
+        // ========== LOAD DEVICE DROPDOWN FOR OPERATION FORM ==========
+        async function loadDeviceDropdown() {
+            const select = document.getElementById('opDeviceId');
+            select.innerHTML = '<option value="">Choose a device</option>';
+            try {
+                const snapshot = await db.collection('devices').orderBy('brand').get();
+                snapshot.forEach(doc => {
+                    const d = doc.data();
+                    const option = document.createElement('option');
+                    option.value = doc.id;
+                    option.textContent = `${d.brand} ${d.model}`;
+                    select.appendChild(option);
+                });
+            } catch (error) {
+                console.error('Dropdown error:', error);
+            }
+        }
+
+        // ========== ADD / UPDATE DEVICE ==========
+        document.getElementById('deviceForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+
+            const brand = document.getElementById('brand').value;
+            const model = document.getElementById('model').value.trim();
+            const cpu = document.getElementById('cpu').value.trim();
+            const androidVersion = document.getElementById('androidVersion').value.trim();
+            const securityPatchMin = document.getElementById('securityPatchMin').value || null;
+            const securityPatchMax = document.getElementById('securityPatchMax').value || null;
+            const deviceId = document.getElementById('deviceId').value;
+
+            if (!brand || !model || !cpu) return;
+
+            const deviceData = {
+                brand,
+                model,
+                cpu,
+                androidVersion: androidVersion || null,
+                securityPatchMin,
+                securityPatchMax,
+                updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+            };
+
+            try {
+                if (deviceId) {
+                    await db.collection('devices').doc(deviceId).update(deviceData);
+                } else {
+                    deviceData.createdAt = firebase.firestore.FieldValue.serverTimestamp();
+                    await db.collection('devices').add(deviceData);
+                }
+                resetDeviceForm();
+                loadDevices();
+                loadDeviceDropdown();
+            } catch (error) {
+                alert('Error saving device: ' + error.message);
+            }
+        });
+
+        window.editDevice = (id, brand, model, cpu, androidVersion, patchMin, patchMax) => {
+            document.getElementById('deviceId').value = id;
+            document.getElementById('brand').value = brand;
+            document.getElementById('model').value = model;
+            document.getElementById('cpu').value = cpu;
+            document.getElementById('androidVersion').value = androidVersion;
+            document.getElementById('securityPatchMin').value = patchMin;
+            document.getElementById('securityPatchMax').value = patchMax;
+        };
+
+        document.getElementById('resetDeviceBtn').addEventListener('click', resetDeviceForm);
+        function resetDeviceForm() {
+            document.getElementById('deviceId').value = '';
+            document.getElementById('deviceForm').reset();
+        }
+
+        // ========== DELETE DEVICE ==========
+        window.deleteDevice = async (id) => {
+            if (!confirm('Delete this device? All associated operations will also be deleted.')) return;
+            try {
+                const opsSnapshot = await db.collection('operations').where('deviceId', '==', id).get();
+                const batch = db.batch();
+                opsSnapshot.docs.forEach(doc => batch.delete(doc.ref));
+                batch.delete(db.collection('devices').doc(id));
+                await batch.commit();
+                loadDevices();
+                loadDeviceDropdown();
+            } catch (error) {
+                alert('Delete error: ' + error.message);
+            }
+        };
+
+        // ========== ADD OPERATION ==========
+        document.getElementById('operationForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+
+            const deviceId = document.getElementById('opDeviceId').value;
+            const opType = document.getElementById('opType').value;
+            const mode = document.getElementById('opMode').value;
+            const successRate = document.getElementById('opSuccess').value;
+            const testPointUrl = document.getElementById('testPointUrl').value.trim();
+
+            const tools = [];
+            document.querySelectorAll('.tool-checkbox-group input[type=checkbox]:checked').forEach(cb => {
+                tools.push(cb.value);
+            });
+
+            if (!deviceId || !opType || !mode || !successRate) {
+                alert('Please fill all required fields');
+                return;
+            }
+
+            const operationData = {
+                deviceId,
+                operationType: opType,
+                requiredMode: mode,
+                tools,
+                successRate,
+                testPointUrl: testPointUrl || null,
+                createdAt: firebase.firestore.FieldValue.serverTimestamp()
+            };
+
+            try {
+                await db.collection('operations').add(operationData);
+                document.getElementById('operationForm').reset();
+                loadDevices(); // refresh op count
+                alert('Operation added successfully');
+            } catch (error) {
+                alert('Error adding operation: ' + error.message);
+            }
+        });
+    </script>
+</body>
+</html>

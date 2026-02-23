@@ -1,0 +1,756 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>GSM Flags · Mobile Tech Database</title>
+    <!-- Bootstrap 5 (dark theme customised) -->
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0-alpha1/dist/css/bootstrap.min.css" rel="stylesheet">
+    <!-- Font Awesome -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+    <!-- Firebase SDK (compat) -->
+    <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-firestore-compat.js"></script>
+    <style>
+        /* ---------- RESET & BASE ---------- */
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+        }
+        body {
+            background-color: #0a0c0f;
+            color: #e8edf2;
+            line-height: 1.6;
+            padding: 20px;
+        }
+        /* ---------- TOOL STATUS BAR ---------- */
+        .tool-status-bar {
+            background-color: #151a1f;
+            border: 1px solid #2a343c;
+            border-radius: 40px;
+            padding: 10px 24px;
+            margin-bottom: 30px;
+            display: flex;
+            flex-wrap: wrap;
+            gap: 30px;
+            font-size: 0.9rem;
+            color: #b0c4d9;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.5);
+        }
+        .tool-status-bar span::before {
+            content: "●";
+            margin-right: 8px;
+            font-size: 1.2rem;
+            vertical-align: middle;
+        }
+        .tool-status-bar span:nth-child(1)::before { color: #f28b82; }
+        .tool-status-bar span:nth-child(2)::before { color: #81c995; }
+        .tool-status-bar span:nth-child(3)::before { color: #fdd663; }
+        /* ---------- MAIN CONTAINER ---------- */
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+            display: grid;
+            grid-template-columns: 1fr 300px;
+            gap: 30px;
+        }
+        /* ---------- SEARCH HERO ---------- */
+        .search-hero {
+            grid-column: 1 / -1;
+            background: #13181d;
+            border-radius: 24px;
+            padding: 40px;
+            border: 1px solid #2a343c;
+            box-shadow: 0 8px 0 #0b0f12;
+        }
+        .search-hero h1 {
+            font-size: 2.8rem;
+            font-weight: 600;
+            letter-spacing: -0.5px;
+        }
+        .version {
+            background: #2d5a9a;
+            color: white;
+            font-size: 1rem;
+            padding: 4px 12px;
+            border-radius: 40px;
+            margin-left: 15px;
+            vertical-align: middle;
+        }
+        .subtitle {
+            color: #95aec9;
+            margin-bottom: 30px;
+            font-size: 1.2rem;
+        }
+        .search-row {
+            display: flex;
+            gap: 20px;
+            align-items: flex-end;
+            flex-wrap: wrap;
+        }
+        .select-group {
+            flex: 1 1 250px;
+        }
+        .select-group label {
+            display: block;
+            font-size: 0.9rem;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            color: #95aec9;
+            margin-bottom: 8px;
+        }
+        .select-group select, .filter-item input, .filter-item select {
+            width: 100%;
+            background: #1e262e;
+            border: 1px solid #2f3b45;
+            color: #e8edf2;
+            padding: 14px 18px;
+            border-radius: 16px;
+            font-size: 1rem;
+            outline: none;
+            transition: 0.15s;
+        }
+        .select-group select:focus, .filter-item input:focus {
+            border-color: #4f9cff;
+            box-shadow: 0 0 0 3px rgba(79,156,255,0.2);
+        }
+        .search-btn {
+            background: #2d5a9a;
+            color: white;
+            border: none;
+            padding: 14px 32px;
+            border-radius: 40px;
+            font-size: 1.1rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: 0.15s;
+            border-bottom: 3px solid #1d3b64;
+            white-space: nowrap;
+        }
+        .search-btn:hover {
+            background: #356bb0;
+            transform: translateY(-1px);
+        }
+        .clear-btn {
+            background: #3a4550;
+            color: #e8edf2;
+            border: none;
+            padding: 14px 24px;
+            border-radius: 40px;
+            font-size: 1rem;
+            font-weight: 500;
+            cursor: pointer;
+            transition: 0.15s;
+            border-bottom: 3px solid #252e36;
+            white-space: nowrap;
+            margin-left: 10px;
+        }
+        .clear-btn:hover {
+            background: #4e5b68;
+        }
+        .advanced-filters {
+            margin-top: 30px;
+            background: #0f151b;
+            border-radius: 20px;
+            padding: 15px 20px;
+        }
+        .advanced-filters summary {
+            cursor: pointer;
+            color: #4f9cff;
+            font-weight: 500;
+            outline: none;
+        }
+        .filters-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 20px;
+            margin-top: 20px;
+        }
+        .filter-item label {
+            display: block;
+            margin-bottom: 6px;
+            color: #95aec9;
+            font-size: 0.9rem;
+        }
+        /* ---------- RESULTS SECTION ---------- */
+        .results-section {
+            grid-column: 1 / 2;
+            background: #13181d;
+            border-radius: 24px;
+            padding: 30px;
+            border: 1px solid #2a343c;
+        }
+        .results-section.hidden {
+            display: none;
+        }
+        .device-header {
+            display: flex;
+            flex-wrap: wrap;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 25px;
+            padding-bottom: 20px;
+            border-bottom: 1px solid #2a343c;
+        }
+        .device-title {
+            font-size: 1.8rem;
+            font-weight: 600;
+        }
+        .device-chips {
+            display: flex;
+            gap: 12px;
+            flex-wrap: wrap;
+        }
+        .chip {
+            background: #1e2a33;
+            padding: 8px 16px;
+            border-radius: 40px;
+            font-size: 0.9rem;
+            border-left: 3px solid #4f9cff;
+        }
+        .chip.cpu {
+            border-left-color: #9c6ade;
+        }
+        .chip.patch {
+            border-left-color: #f9a75c;
+        }
+        .patch-status {
+            margin-top: 8px;
+            font-size: 0.95rem;
+            background: #1f2c35;
+            padding: 8px 16px;
+            border-radius: 12px;
+            color: #b0e0ff;
+        }
+        /* GSM Matrix Table */
+        .matrix-table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+        .matrix-table th {
+            text-align: left;
+            padding: 16px 8px 8px 8px;
+            color: #95aec9;
+            font-weight: 500;
+            font-size: 0.9rem;
+            border-bottom: 1px solid #2a343c;
+        }
+        .matrix-table td {
+            padding: 16px 8px;
+            border-bottom: 1px solid #202a33;
+        }
+        .matrix-table tr:last-child td {
+            border-bottom: none;
+        }
+        .operation-badge {
+            display: inline-block;
+            padding: 6px 14px;
+            border-radius: 40px;
+            font-weight: 500;
+            font-size: 0.9rem;
+        }
+        .badge-green {
+            background: #1e3a2a;
+            color: #9ace9a;
+            border: 1px solid #2f6e4a;
+        }
+        .badge-orange {
+            background: #4a3a1e;
+            color: #e6c17a;
+            border: 1px solid #8f6f2c;
+        }
+        .badge-red {
+            background: #4a2525;
+            color: #f0a0a0;
+            border: 1px solid #a13b3b;
+        }
+        .tool-badge {
+            display: inline-block;
+            background: #1e3a5a;
+            color: #a9d0ff;
+            padding: 4px 10px;
+            border-radius: 40px;
+            font-size: 0.8rem;
+            margin-right: 4px;
+            margin-bottom: 4px;
+        }
+        .action-link {
+            color: #4f9cff;
+            text-decoration: none;
+            font-weight: 500;
+            margin-left: 12px;
+            cursor: pointer;
+        }
+        .action-link:hover {
+            text-decoration: underline;
+        }
+        .tp-button {
+            background: none;
+            border: 1px solid #3f5e7a;
+            color: #a9d0ff;
+            padding: 6px 14px;
+            border-radius: 40px;
+            cursor: pointer;
+            font-size: 0.9rem;
+            margin-right: 8px;
+        }
+        .tp-button:hover {
+            background: #1e3a5a;
+        }
+        .copy-guide-btn {
+            background: none;
+            border: 1px solid #3f5e7a;
+            color: #a9d0ff;
+            padding: 6px 14px;
+            border-radius: 40px;
+            cursor: pointer;
+            font-size: 0.9rem;
+            margin-left: 8px;
+        }
+        .copy-guide-btn:hover {
+            background: #1e3a5a;
+        }
+        /* ---------- LOG FEED ---------- */
+        .log-feed {
+            background: #13181d;
+            border-radius: 24px;
+            padding: 24px;
+            border: 1px solid #2a343c;
+            align-self: start;
+        }
+        .log-feed h3 {
+            margin-bottom: 20px;
+            font-size: 1.2rem;
+            color: #b0c4d9;
+        }
+        .log-feed ul {
+            list-style: none;
+        }
+        .log-feed li {
+            padding: 12px 0;
+            border-bottom: 1px solid #202a33;
+            font-size: 0.9rem;
+            color: #ccddee;
+        }
+        .log-feed li:last-child {
+            border-bottom: none;
+        }
+        /* ---------- WHATSAPP FLOAT ---------- */
+        .whatsapp-float {
+            position: fixed;
+            bottom: 30px;
+            right: 30px;
+            background: #25d366;
+            color: white;
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            padding: 14px 24px;
+            border-radius: 60px;
+            text-decoration: none;
+            font-weight: 600;
+            box-shadow: 0 8px 20px rgba(37, 211, 102, 0.3);
+            transition: 0.2s;
+            z-index: 100;
+        }
+        .whatsapp-float:hover {
+            transform: scale(1.05);
+            background: #20c05c;
+        }
+        .whatsapp-float img {
+            width: 28px;
+            height: 28px;
+        }
+        /* ---------- BOOTSTRAP MODAL DARK THEME OVERRIDE ---------- */
+        .modal-content {
+            background-color: #13181d;
+            border: 1px solid #2a343c;
+            color: #e8edf2;
+        }
+        .modal-header {
+            border-bottom: 1px solid #2a343c;
+        }
+        .modal-footer {
+            border-top: 1px solid #2a343c;
+        }
+        .btn-close {
+            filter: invert(1) grayscale(100%) brightness(200%);
+        }
+        .zoomed-img {
+            transform: scale(1.5);
+            transition: transform 0.2s;
+            cursor: zoom-out;
+        }
+        .img-fluid {
+            max-height: 70vh;
+            object-fit: contain;
+        }
+        /* ---------- UTILS ---------- */
+        .hidden {
+            display: none;
+        }
+    </style>
+</head>
+<body>
+    <!-- Sticky Tool Status Monitor (simulated) -->
+    <div class="tool-status-bar">
+        <span>Mi Auth Server: Offline (last check: 2 min ago)</span>
+        <span>Chimera Tool: Online</span>
+        <span>UnlockTool: Online (slow)</span>
+    </div>
+
+    <main class="container">
+        <!-- Hero Search Section -->
+        <section class="search-hero">
+            <h1>Chip2Unlock <span class="version">beta</span></h1>
+            <p class="subtitle">Relational GSM decision engine</p>
+
+            <form id="searchForm">
+                <div class="search-row">
+                    <div class="select-group">
+                        <label for="brand">1. Brand</label>
+                        <select id="brand" name="brand" required>
+                            <option value="">-- Select Brand --</option>
+                        </select>
+                    </div>
+                    <div class="select-group">
+                        <label for="model">2. Model</label>
+                        <select id="model" name="model" required disabled>
+                            <option value="">-- First select brand --</option>
+                        </select>
+                    </div>
+                    <button type="submit" class="search-btn">Check Compatibility</button>
+                    <button type="button" id="clearBtn" class="clear-btn"><i class="fas fa-times"></i> Clear</button>
+                </div>
+
+                <!-- Advanced Filters Toggle -->
+                <details class="advanced-filters">
+                    <summary>Advanced Filters</summary>
+                    <div class="filters-grid">
+                        <div class="filter-item">
+                            <label for="cpu">CPU Brand</label>
+                            <select id="cpu" name="cpu_brand">
+                                <option value="">Any CPU</option>
+                            </select>
+                        </div>
+                        <div class="filter-item">
+                            <label for="security_patch">Security Patch (YYYY-MM)</label>
+                            <input type="month" id="security_patch" name="security_patch">
+                        </div>
+                    </div>
+                </details>
+            </form>
+        </section>
+
+        <!-- Results Area (hidden initially) -->
+        <section id="results" class="results-section hidden">
+            <!-- populated by JavaScript -->
+        </section>
+
+        <!-- Daily Log Feed (sidebar style) -->
+        <aside class="log-feed">
+            <h3>📡 Live Technician Feed</h3>
+            <ul id="logList">
+                <li>🔥 JohnDoe unlocked Redmi Note 12 (Sapphire) via Auth Flash</li>
+                <li>✅ New test points added for Samsung A14</li>
+                <li>⚙️ UMT v2.0 now supports 50 new models</li>
+            </ul>
+        </aside>
+    </main>
+
+    <!-- Floating WhatsApp Button (Lead Gen) -->
+    <a href="#" id="whatsapp-support" class="whatsapp-float" target="_blank">
+        <img src="https://img.icons8.com/color/48/000000/whatsapp--v1.png" alt="WhatsApp">
+        <span>Request Remote Help</span>
+    </a>
+
+    <!-- Test Point Modal (Bootstrap) -->
+    <div class="modal fade" id="tpModal" tabindex="-1" aria-labelledby="tpModalLabel" aria-hidden="true">
+        <div class="modal-dialog modal-lg modal-dialog-centered">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title" id="tpModalLabel">Test Point Image</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body text-center">
+                    <img id="modalImage" src="" alt="Test Point" class="img-fluid" style="transition: transform 0.2s;">
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-outline-secondary" id="zoomBtn"><i class="fas fa-search-plus"></i> Zoom</button>
+                    <a id="downloadBtn" href="#" download class="btn btn-outline-secondary"><i class="fas fa-download"></i> Download</a>
+                    <button type="button" class="btn btn-primary" data-bs-dismiss="modal">Close</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Bootstrap JS (with Popper) -->
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0-alpha1/dist/js/bootstrap.bundle.min.js"></script>
+
+    <script>
+        // ========== FIREBASE CONFIG (REPLACE WITH YOUR OWN) ==========
+        const firebaseConfig = {
+            apiKey: "AIzaSyDmwtPoZuKgEBc_lgIDMoBHF1ZwObhAnl8",
+            authDomain: "phunlocker-c6fc4.firebaseapp.com",
+            projectId: "phunlocker-c6fc4",
+            storageBucket: "phunlocker-c6fc4.firebasestorage.app",
+            messagingSenderId: "616452799409",
+            appId: "1:616452799409:web:2bbb5fb74c96cbbb571b90"
+        };
+        firebase.initializeApp(firebaseConfig);
+        const db = firebase.firestore();
+
+        // ========== UI ELEMENTS ==========
+        const brandSelect = document.getElementById('brand');
+        const modelSelect = document.getElementById('model');
+        const cpuSelect = document.getElementById('cpu');
+        const securityPatchInput = document.getElementById('security_patch');
+        const searchForm = document.getElementById('searchForm');
+        const clearBtn = document.getElementById('clearBtn');
+        const resultsSection = document.getElementById('results');
+        const whatsappBtn = document.getElementById('whatsapp-support');
+
+        // Modal elements
+        const tpModal = new bootstrap.Modal(document.getElementById('tpModal'));
+        const modalImage = document.getElementById('modalImage');
+        const zoomBtn = document.getElementById('zoomBtn');
+        const downloadBtn = document.getElementById('downloadBtn');
+
+        // Zoom toggle
+        let zoomed = false;
+        zoomBtn.addEventListener('click', () => {
+            if (zoomed) {
+                modalImage.style.transform = 'scale(1)';
+                zoomBtn.innerHTML = '<i class="fas fa-search-plus"></i> Zoom';
+            } else {
+                modalImage.style.transform = 'scale(1.5)';
+                zoomBtn.innerHTML = '<i class="fas fa-search-minus"></i> Unzoom';
+            }
+            zoomed = !zoomed;
+        });
+
+        // Reset zoom when modal hides
+        document.getElementById('tpModal').addEventListener('hidden.bs.modal', function () {
+            modalImage.style.transform = 'scale(1)';
+            zoomed = false;
+            zoomBtn.innerHTML = '<i class="fas fa-search-plus"></i> Zoom';
+        });
+
+        // ========== POPULATE BRAND DROPDOWN ==========
+        async function loadBrands() {
+            const snapshot = await db.collection('devices').get();
+            const brandsSet = new Set();
+            snapshot.forEach(doc => brandsSet.add(doc.data().brand));
+            const brands = Array.from(brandsSet).sort();
+            brands.forEach(b => {
+                const option = document.createElement('option');
+                option.value = b;
+                option.textContent = b;
+                brandSelect.appendChild(option);
+            });
+        }
+        loadBrands();
+
+        // ========== POPULATE CPU DROPDOWN ==========
+        async function loadCpuBrands() {
+            const snapshot = await db.collection('devices').get();
+            const cpuSet = new Set();
+            snapshot.forEach(doc => {
+                const cpu = doc.data().cpu;
+                if (cpu) {
+                    const brand = cpu.split(' ')[0]; // e.g., "Qualcomm"
+                    cpuSet.add(brand);
+                }
+            });
+            const cpus = Array.from(cpuSet).sort();
+            cpus.forEach(c => {
+                const option = document.createElement('option');
+                option.value = c;
+                option.textContent = c;
+                cpuSelect.appendChild(option);
+            });
+        }
+        loadCpuBrands();
+
+        // ========== BRAND CHANGE -> LOAD MODELS (with document ID) ==========
+        brandSelect.addEventListener('change', async function() {
+            const brand = this.value;
+            modelSelect.disabled = true;
+            modelSelect.innerHTML = '<option value="">Loading...</option>';
+
+            if (!brand) {
+                modelSelect.disabled = true;
+                modelSelect.innerHTML = '<option value="">-- First select brand --</option>';
+                return;
+            }
+
+            const snapshot = await db.collection('devices').where('brand', '==', brand).get();
+            const options = [];
+            snapshot.forEach(doc => {
+                const data = doc.data();
+                options.push({ id: doc.id, model: data.model });
+            });
+            options.sort((a, b) => a.model.localeCompare(b.model));
+
+            modelSelect.innerHTML = '<option value="">-- Select Model --</option>';
+            options.forEach(opt => {
+                const option = document.createElement('option');
+                option.value = opt.id;      // Firestore document ID
+                option.textContent = opt.model;
+                modelSelect.appendChild(option);
+            });
+            modelSelect.disabled = false;
+        });
+
+        // ========== SEARCH FORM SUBMIT ==========
+        searchForm.addEventListener('submit', async function(e) {
+            e.preventDefault();
+
+            const brand = brandSelect.value;
+            const deviceId = modelSelect.value;   // This is now the document ID
+            const cpuFilter = cpuSelect.value;
+            const securityPatch = securityPatchInput.value; // YYYY-MM
+
+            if (!brand || !deviceId) {
+                alert('Please select both brand and model');
+                return;
+            }
+
+            // Fetch device by ID
+            const deviceDoc = await db.collection('devices').doc(deviceId).get();
+            if (!deviceDoc.exists) {
+                alert('Device not found in database');
+                return;
+            }
+            const device = { id: deviceDoc.id, ...deviceDoc.data() };
+
+            // Optional CPU filter warning
+            if (cpuFilter && device.cpu && !device.cpu.startsWith(cpuFilter)) {
+                // Still proceed, but could show a toast; we'll just log
+                console.log(`Device CPU is ${device.cpu}, but you filtered for ${cpuFilter}`);
+            }
+
+            // Determine patch status
+            let patchStatus = 'No patch data available';
+            if (securityPatch && device.securityPatchMin && device.securityPatchMax) {
+                const userPatch = securityPatch + '-01'; // add day
+                if (userPatch < device.securityPatchMin) {
+                    patchStatus = '🟢 Vulnerable (older than known range)';
+                } else if (userPatch > device.securityPatchMax) {
+                    patchStatus = '🔴 Patched (beyond supported range)';
+                } else {
+                    patchStatus = '🟡 Vulnerable (within range)';
+                }
+            }
+
+            // Fetch operations for this device
+            const opsSnapshot = await db.collection('operations').where('deviceId', '==', device.id).get();
+            const operations = opsSnapshot.docs.map(doc => doc.data());
+
+            // Build device info object
+            const deviceInfo = {
+                title: `${device.brand} ${device.model}`,
+                cpu: device.cpu || 'N/A',
+                android: device.androidVersion || '?',
+                patch_range: device.securityPatchMin ? `${device.securityPatchMin} to ${device.securityPatchMax}` : 'Unknown',
+                patch_status: patchStatus,
+            };
+
+            // Render results
+            renderResults(deviceInfo, operations);
+
+            // Update WhatsApp link with pre-filled message
+            const message = `Hi, I need remote assistance for ${deviceInfo.title} - FRP/Mi Account/other.`;
+            whatsappBtn.href = `https://wa.me/8801333408063?text=${encodeURIComponent(message)}`; // replace with your number
+
+            resultsSection.classList.remove('hidden');
+        });
+
+        // ========== RENDER RESULTS ==========
+        function renderResults(device, operations) {
+            let html = `
+                <div class="device-header">
+                    <div class="device-title">${device.title}</div>
+                    <div class="device-chips">
+                        <span class="chip cpu">CPU: ${device.cpu}</span>
+                        <span class="chip">Android ${device.android}</span>
+                    </div>
+                </div>
+                <div class="patch-status">🔒 Security patch: ${device.patch_range} — ${device.patch_status}</div>
+            `;
+
+            if (operations.length === 0) {
+                html += '<p style="margin-top:30px;">No compatibility data found for this device.</p>';
+            } else {
+                html += `
+                    <table class="matrix-table">
+                        <thead>
+                            <tr><th>Operation</th><th>Mode</th><th>Tools</th><th>Actions</th></tr>
+                        </thead>
+                        <tbody>
+                `;
+
+                operations.forEach((op, index) => {
+                    const rateClass = 
+                        op.successRate === 'High' ? 'badge-green' :
+                        op.successRate === 'Medium' ? 'badge-orange' : 'badge-red';
+                    const toolsHtml = (op.tools || []).map(t => `<span class="tool-badge">${t}</span>`).join(' ');
+                    
+                    // Build guide text for copy
+                    const guideText = `Operation: ${op.operationType}\nMode: ${op.requiredMode}\nTools: ${(op.tools || []).join(', ')}\nSuccess Rate: ${op.successRate}`;
+                    
+                    // TP button only if URL exists
+                    const tpButton = op.testPointUrl 
+                        ? `<button class="tp-button" onclick="showTestPoint('${op.testPointUrl}')"><i class="fas fa-image"></i> View TP</button>` 
+                        : '';
+
+                    html += `
+                        <tr>
+                            <td><span class="operation-badge ${rateClass}">${op.operationType}</span></td>
+                            <td><code>${op.requiredMode}</code></td>
+                            <td>${toolsHtml}</td>
+                            <td>
+                                ${tpButton}
+                                <button class="copy-guide-btn" onclick="copyGuide('${guideText.replace(/'/g, "\\'")}')"><i class="fas fa-copy"></i> Copy Guide</button>
+                                <a href="#" class="action-link" onclick="alert('Detailed guide for ${op.operationType} will be available soon.'); return false;">Guide →</a>
+                            </td>
+                        </tr>
+                    `;
+                });
+
+                html += '</tbody></table>';
+            }
+
+            resultsSection.innerHTML = html;
+        }
+
+        // ========== TEST POINT MODAL ==========
+        window.showTestPoint = function(url) {
+            modalImage.src = url;
+            downloadBtn.href = url;
+            tpModal.show();
+        };
+
+        // ========== COPY GUIDE ==========
+        window.copyGuide = function(text) {
+            navigator.clipboard.writeText(text).then(() => {
+                alert('Guide copied to clipboard!');
+            }).catch(() => {
+                alert('Failed to copy guide.');
+            });
+        };
+
+        // ========== CLEAR BUTTON ==========
+        clearBtn.addEventListener('click', function() {
+            brandSelect.value = '';
+            modelSelect.innerHTML = '<option value="">-- First select brand --</option>';
+            modelSelect.disabled = true;
+            cpuSelect.value = '';
+            securityPatchInput.value = '';
+            resultsSection.classList.add('hidden');
+        });
+    </script>
+</body>
+</html>

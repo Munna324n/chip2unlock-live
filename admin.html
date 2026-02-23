@@ -178,6 +178,14 @@
             width: 100%;
             max-width: 300px;
         }
+        .brand-input-group {
+            display: flex;
+            gap: 10px;
+            align-items: center;
+        }
+        .brand-input-group input {
+            flex: 1;
+        }
     </style>
 </head>
 <body>
@@ -240,7 +248,7 @@
         </div>
 
         <div class="row g-4">
-            <!-- Add Device Card -->
+            <!-- Add Device Card (with dynamic brand input) -->
             <div class="col-md-6">
                 <div class="card h-100">
                     <div class="card-header">
@@ -249,21 +257,17 @@
                     <div class="card-body">
                         <form id="deviceForm">
                             <input type="hidden" id="deviceId" value="">
+                            
+                            <!-- Brand input with datalist -->
                             <div class="mb-3">
                                 <label class="form-label">Brand</label>
-                                <select class="form-select" id="brand" required>
-                                    <option value="">Select Brand</option>
-                                    <option value="Samsung">Samsung</option>
-                                    <option value="Xiaomi">Xiaomi</option>
-                                    <option value="OnePlus">OnePlus</option>
-                                    <option value="Oppo">Oppo</option>
-                                    <option value="Vivo">Vivo</option>
-                                    <option value="Realme">Realme</option>
-                                    <option value="Motorola">Motorola</option>
-                                    <option value="Google">Google</option>
-                                    <option value="Apple">Apple</option>
-                                </select>
+                                <div class="brand-input-group">
+                                    <input type="text" class="form-control" id="brand" list="brandList" placeholder="Type or select brand" required>
+                                    <datalist id="brandList"></datalist>
+                                    <button type="button" id="refreshBrandsBtn" class="btn btn-outline-secondary" title="Refresh brand list"><i class="fas fa-sync-alt"></i></button>
+                                </div>
                             </div>
+
                             <div class="mb-3">
                                 <label class="form-label">Model (e.g., SM-S918B)</label>
                                 <input type="text" class="form-control" id="model" placeholder="SM-S918B" required>
@@ -297,7 +301,7 @@
                 </div>
             </div>
 
-            <!-- Add Operation Matrix Card (UPDATED) -->
+            <!-- Add Operation Matrix Card (with multi‑service textarea) -->
             <div class="col-md-6">
                 <div class="card h-100">
                     <div class="card-header">
@@ -311,16 +315,14 @@
                                     <option value="">Choose a device</option>
                                 </select>
                             </div>
+
+                            <!-- Replaced dropdown with textarea for multi‑service description -->
                             <div class="mb-3">
-                                <label class="form-label">Operation Type (dropdown for quick select)</label>
-                                <select class="form-select" id="opType" required>
-                                    <option value="FRP">FRP</option>
-                                    <option value="Auth Flash">Auth Flash</option>
-                                    <option value="Mi Account Remove">Mi Account Remove</option>
-                                    <option value="Read Info">Read Info</option>
-                                    <option value="Write Firmware">Write Firmware</option>
-                                </select>
+                                <label class="form-label">Services / Operations Description</label>
+                                <textarea class="form-control" id="servicesDesc" rows="3" placeholder="e.g., FRP + Mi Account + Bootloader Unlock + Network Fix" required></textarea>
+                                <div class="form-text text-secondary">Describe all services this operation covers.</div>
                             </div>
+
                             <div class="mb-3">
                                 <label class="form-label">Required Mode</label>
                                 <select class="form-select" id="opMode" required>
@@ -333,7 +335,7 @@
                                 </select>
                             </div>
 
-                            <!-- NEW: Dynamic Tools Section -->
+                            <!-- Dynamic Tools Section -->
                             <div class="mb-3">
                                 <label class="form-label">Tools Supported</label>
                                 <div id="toolsContainer" class="tool-checkbox-group">
@@ -343,12 +345,6 @@
                                     <input type="text" id="newToolName" class="form-control" placeholder="Enter tool name (e.g., Pandora)">
                                     <button type="button" id="addToolBtn" class="btn btn-success"><i class="fas fa-plus"></i> Add Tool</button>
                                 </div>
-                            </div>
-
-                            <!-- NEW: Operation Details (free text) -->
-                            <div class="mb-3">
-                                <label class="form-label">Operation Details (optional description)</label>
-                                <textarea class="form-control" id="opDetails" rows="3" placeholder="e.g., Supports FRP, Mi Cloud, and Bootloader Unlock for all security patches."></textarea>
                             </div>
 
                             <div class="mb-3">
@@ -420,8 +416,7 @@
 
         // ========== GLOBAL VARIABLES ==========
         let currentDeviceId = null;
-        // Dynamic tools array (in memory)
-        let availableTools = ['UnlockTool', 'UMT', 'Hydra', 'Chimera']; // initial
+        let availableTools = ['UnlockTool', 'UMT', 'Hydra', 'Chimera']; // initial tools
 
         // ========== AUTH STATE ==========
         auth.onAuthStateChanged(user => {
@@ -431,7 +426,8 @@
                 loadSummaryStats();
                 loadDevices();
                 loadDeviceDropdown();
-                renderToolCheckboxes(); // initial render
+                loadBrandDatalist();
+                renderToolCheckboxes();
             } else {
                 document.getElementById('loginContainer').classList.remove('hidden');
                 document.getElementById('dashboard').classList.add('hidden');
@@ -463,12 +459,10 @@
                 const opsSnap = await db.collection('operations').get();
                 document.getElementById('totalOperations').innerText = opsSnap.size;
 
-                // Unique brands
                 const brands = new Set();
                 devicesSnap.forEach(doc => brands.add(doc.data().brand));
                 document.getElementById('uniqueBrands').innerText = brands.size;
 
-                // Last added device (by createdAt)
                 const lastAddedQuery = await db.collection('devices').orderBy('createdAt', 'desc').limit(1).get();
                 if (!lastAddedQuery.empty) {
                     const last = lastAddedQuery.docs[0].data();
@@ -480,6 +474,27 @@
                 console.error('Stats error:', error);
             }
         }
+
+        // ========== LOAD BRAND DATALIST ==========
+        async function loadBrandDatalist() {
+            const datalist = document.getElementById('brandList');
+            try {
+                const snapshot = await db.collection('devices').get();
+                const brands = new Set();
+                snapshot.forEach(doc => brands.add(doc.data().brand));
+                datalist.innerHTML = '';
+                brands.forEach(b => {
+                    const option = document.createElement('option');
+                    option.value = b;
+                    datalist.appendChild(option);
+                });
+            } catch (error) {
+                console.error('Brand datalist error:', error);
+            }
+        }
+
+        // Refresh brand datalist button
+        document.getElementById('refreshBrandsBtn').addEventListener('click', loadBrandDatalist);
 
         // ========== RENDER TOOL CHECKBOXES ==========
         function renderToolCheckboxes() {
@@ -526,11 +541,9 @@
                 for (const doc of snapshot.docs) {
                     const d = doc.data();
                     const deviceId = doc.id;
-                    // Count operations using snapshot.size (fix for .count error)
                     const opsSnap = await db.collection('operations').where('deviceId', '==', deviceId).get();
                     const opCount = opsSnap.size;
                     const patchRange = d.securityPatchMin ? `${d.securityPatchMin} to ${d.securityPatchMax}` : '—';
-                    // Escape quotes for inline onclick
                     const brandEsc = d.brand.replace(/'/g, "\\'");
                     const modelEsc = d.model.replace(/'/g, "\\'");
                     const cpuEsc = (d.cpu || '').replace(/'/g, "\\'");
@@ -549,7 +562,7 @@
                     </tr>`;
                 }
                 tbody.innerHTML = html;
-                attachSearchFilter(); // attach filter after table loaded
+                attachSearchFilter();
             } catch (error) {
                 tbody.innerHTML = `<tr><td colspan="7" class="text-danger">Error: ${error.message}</td></tr>`;
             }
@@ -560,7 +573,6 @@
             const searchInput = document.getElementById('searchTable');
             const table = document.querySelector('.table');
             const rows = table.querySelectorAll('tbody tr');
-
             searchInput.addEventListener('keyup', function() {
                 const term = this.value.toLowerCase();
                 rows.forEach(row => {
@@ -592,7 +604,7 @@
         document.getElementById('deviceForm').addEventListener('submit', async (e) => {
             e.preventDefault();
 
-            const brand = document.getElementById('brand').value;
+            const brand = document.getElementById('brand').value.trim();
             const model = document.getElementById('model').value.trim();
             const cpu = document.getElementById('cpu').value.trim();
             const androidVersion = document.getElementById('androidVersion').value.trim();
@@ -622,6 +634,7 @@
                 resetDeviceForm();
                 loadDevices();
                 loadDeviceDropdown();
+                loadBrandDatalist(); // refresh brand list
                 loadSummaryStats();
             } catch (error) {
                 alert('Error saving device: ' + error.message);
@@ -655,40 +668,38 @@
                 await batch.commit();
                 loadDevices();
                 loadDeviceDropdown();
+                loadBrandDatalist();
                 loadSummaryStats();
             } catch (error) {
                 alert('Delete error: ' + error.message);
             }
         };
 
-        // ========== ADD OPERATION (UPDATED) ==========
+        // ========== ADD OPERATION (UPDATED with multi‑service textarea) ==========
         document.getElementById('operationForm').addEventListener('submit', async (e) => {
             e.preventDefault();
 
             const deviceId = document.getElementById('opDeviceId').value;
-            const opType = document.getElementById('opType').value;
+            const servicesDesc = document.getElementById('servicesDesc').value.trim(); // new multi‑service field
             const mode = document.getElementById('opMode').value;
-            const details = document.getElementById('opDetails').value.trim(); // new field
             const successRate = document.getElementById('opSuccess').value;
             const testPointUrl = document.getElementById('testPointUrl').value.trim();
 
-            // Collect checked tools
             const tools = [];
             document.querySelectorAll('#toolsContainer .form-check-input:checked').forEach(cb => {
                 tools.push(cb.value);
             });
 
-            if (!deviceId || !opType || !mode || !successRate) {
+            if (!deviceId || !servicesDesc || !mode || !successRate) {
                 alert('Please fill all required fields');
                 return;
             }
 
             const operationData = {
                 deviceId,
-                operationType: opType,
+                servicesDescription: servicesDesc,   // new field storing the multi‑service text
                 requiredMode: mode,
                 tools,
-                operationDetails: details || null,   // new field
                 successRate,
                 testPointUrl: testPointUrl || null,
                 createdAt: firebase.firestore.FieldValue.serverTimestamp()
@@ -697,9 +708,8 @@
             try {
                 await db.collection('operations').add(operationData);
                 document.getElementById('operationForm').reset();
-                // Reset tools checkboxes (uncheck all)
                 document.querySelectorAll('#toolsContainer .form-check-input').forEach(cb => cb.checked = false);
-                loadDevices(); // refresh op count
+                loadDevices();
                 loadSummaryStats();
                 alert('Operation added successfully');
             } catch (error) {
@@ -708,4 +718,4 @@
         });
     </script>
 </body>
-        </html>
+                                    </html>

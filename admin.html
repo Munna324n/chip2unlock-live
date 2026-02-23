@@ -6,7 +6,7 @@
     <title>Chip2Unlock · Admin Panel</title>
     <!-- Bootstrap 5 (dark theme customised) -->
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0-alpha1/dist/css/bootstrap.min.css" rel="stylesheet">
-    <!-- Font Awesome for icons -->
+    <!-- Font Awesome -->
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
     <!-- Firebase SDK (compat) -->
     <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-app-compat.js"></script>
@@ -32,6 +32,24 @@
             text-transform: uppercase;
             letter-spacing: 0.5px;
             border-radius: 20px 20px 0 0 !important;
+        }
+        .stat-card {
+            background: #1e262e;
+            border-radius: 16px;
+            padding: 20px;
+            text-align: center;
+            border-left: 4px solid #2d5a9a;
+        }
+        .stat-card .stat-value {
+            font-size: 2.2rem;
+            font-weight: 700;
+            color: #4f9cff;
+        }
+        .stat-card .stat-label {
+            color: #95aec9;
+            text-transform: uppercase;
+            font-size: 0.85rem;
+            letter-spacing: 0.5px;
         }
         .form-control, .form-select {
             background-color: #1e262e;
@@ -64,12 +82,12 @@
             background-color: #356bb0;
             transform: translateY(-1px);
         }
-        .btn-danger {
-            background-color: #8b2c2c;
+        .btn-success {
+            background-color: #1e6f3f;
             border: none;
-            border-bottom: 3px solid #5e1e1e;
+            border-bottom: 3px solid #14522e;
             border-radius: 40px;
-            padding: 6px 16px;
+            padding: 8px 20px;
             font-weight: 500;
         }
         .btn-outline-secondary {
@@ -101,6 +119,7 @@
             border-radius: 40px;
             font-size: 0.8rem;
             margin-right: 4px;
+            display: inline-block;
         }
         .login-container {
             max-width: 400px;
@@ -119,14 +138,22 @@
         .tool-checkbox-group {
             display: flex;
             flex-wrap: wrap;
-            gap: 15px;
+            gap: 10px;
             margin-top: 8px;
+            margin-bottom: 10px;
+            max-height: 200px;
+            overflow-y: auto;
+            padding: 5px;
+            border: 1px solid #2f3b45;
+            border-radius: 16px;
+            background: #1a2128;
         }
         .tool-checkbox-group .form-check {
             background: #1e262e;
             padding: 8px 16px;
             border-radius: 40px;
             border: 1px solid #2f3b45;
+            margin: 0;
         }
         .tool-checkbox-group .form-check-input {
             margin-right: 6px;
@@ -136,6 +163,20 @@
         .tool-checkbox-group .form-check-input:checked {
             background-color: #2d5a9a;
             border-color: #4f9cff;
+        }
+        .add-tool-row {
+            display: flex;
+            gap: 10px;
+            margin-top: 10px;
+        }
+        #searchTable {
+            background: #1e262e;
+            border: 1px solid #2f3b45;
+            color: #e9ecef;
+            border-radius: 40px;
+            padding: 10px 20px;
+            width: 100%;
+            max-width: 300px;
         }
     </style>
 </head>
@@ -168,6 +209,34 @@
         <div class="d-flex justify-content-between align-items-center mb-4">
             <h2><i class="fas fa-microchip me-2"></i>Chip2Unlock Admin</h2>
             <button id="logoutBtn" class="btn btn-outline-secondary"><i class="fas fa-sign-out-alt me-2"></i>Logout</button>
+        </div>
+
+        <!-- Summary Cards -->
+        <div class="row g-4 mb-4">
+            <div class="col-md-3">
+                <div class="stat-card">
+                    <div class="stat-value" id="totalDevices">0</div>
+                    <div class="stat-label">Total Devices</div>
+                </div>
+            </div>
+            <div class="col-md-3">
+                <div class="stat-card">
+                    <div class="stat-value" id="totalOperations">0</div>
+                    <div class="stat-label">Total Operations</div>
+                </div>
+            </div>
+            <div class="col-md-3">
+                <div class="stat-card">
+                    <div class="stat-value" id="lastAdded">-</div>
+                    <div class="stat-label">Last Added</div>
+                </div>
+            </div>
+            <div class="col-md-3">
+                <div class="stat-card">
+                    <div class="stat-value" id="uniqueBrands">0</div>
+                    <div class="stat-label">Brands</div>
+                </div>
+            </div>
         </div>
 
         <div class="row g-4">
@@ -228,7 +297,7 @@
                 </div>
             </div>
 
-            <!-- Add Operation Matrix Card -->
+            <!-- Add Operation Matrix Card (UPDATED) -->
             <div class="col-md-6">
                 <div class="card h-100">
                     <div class="card-header">
@@ -240,11 +309,10 @@
                                 <label class="form-label">Select Device</label>
                                 <select class="form-select" id="opDeviceId" required>
                                     <option value="">Choose a device</option>
-                                    <!-- filled dynamically -->
                                 </select>
                             </div>
                             <div class="mb-3">
-                                <label class="form-label">Operation Type</label>
+                                <label class="form-label">Operation Type (dropdown for quick select)</label>
                                 <select class="form-select" id="opType" required>
                                     <option value="FRP">FRP</option>
                                     <option value="Auth Flash">Auth Flash</option>
@@ -264,27 +332,25 @@
                                     <option value="MTP">MTP</option>
                                 </select>
                             </div>
+
+                            <!-- NEW: Dynamic Tools Section -->
                             <div class="mb-3">
                                 <label class="form-label">Tools Supported</label>
-                                <div class="tool-checkbox-group">
-                                    <div class="form-check">
-                                        <input class="form-check-input" type="checkbox" value="UnlockTool" id="tool1">
-                                        <label class="form-check-label" for="tool1">UnlockTool</label>
-                                    </div>
-                                    <div class="form-check">
-                                        <input class="form-check-input" type="checkbox" value="UMT" id="tool2">
-                                        <label class="form-check-label" for="tool2">UMT</label>
-                                    </div>
-                                    <div class="form-check">
-                                        <input class="form-check-input" type="checkbox" value="Hydra" id="tool3">
-                                        <label class="form-check-label" for="tool3">Hydra</label>
-                                    </div>
-                                    <div class="form-check">
-                                        <input class="form-check-input" type="checkbox" value="Chimera" id="tool4">
-                                        <label class="form-check-label" for="tool4">Chimera</label>
-                                    </div>
+                                <div id="toolsContainer" class="tool-checkbox-group">
+                                    <!-- dynamic checkboxes will be injected here -->
+                                </div>
+                                <div class="add-tool-row">
+                                    <input type="text" id="newToolName" class="form-control" placeholder="Enter tool name (e.g., Pandora)">
+                                    <button type="button" id="addToolBtn" class="btn btn-success"><i class="fas fa-plus"></i> Add Tool</button>
                                 </div>
                             </div>
+
+                            <!-- NEW: Operation Details (free text) -->
+                            <div class="mb-3">
+                                <label class="form-label">Operation Details (optional description)</label>
+                                <textarea class="form-control" id="opDetails" rows="3" placeholder="e.g., Supports FRP, Mi Cloud, and Bootloader Unlock for all security patches."></textarea>
+                            </div>
+
                             <div class="mb-3">
                                 <label class="form-label">Success Rate</label>
                                 <select class="form-select" id="opSuccess" required>
@@ -307,10 +373,13 @@
             </div>
         </div>
 
-        <!-- Devices Table -->
+        <!-- Devices Table with search -->
         <div class="card mt-4">
-            <div class="card-header">
-                <i class="fas fa-database me-2"></i>Devices List
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <span><i class="fas fa-database me-2"></i>Devices List</span>
+                <div>
+                    <input type="text" id="searchTable" placeholder="Search by brand, model, CPU...">
+                </div>
             </div>
             <div class="card-body">
                 <div class="table-responsive">
@@ -349,16 +418,20 @@
         const auth = firebase.auth();
         const db = firebase.firestore();
 
-        // ========== GLOBAL ==========
-        let currentDeviceId = null; // for editing
+        // ========== GLOBAL VARIABLES ==========
+        let currentDeviceId = null;
+        // Dynamic tools array (in memory)
+        let availableTools = ['UnlockTool', 'UMT', 'Hydra', 'Chimera']; // initial
 
         // ========== AUTH STATE ==========
         auth.onAuthStateChanged(user => {
             if (user) {
                 document.getElementById('loginContainer').classList.add('hidden');
                 document.getElementById('dashboard').classList.remove('hidden');
+                loadSummaryStats();
                 loadDevices();
                 loadDeviceDropdown();
+                renderToolCheckboxes(); // initial render
             } else {
                 document.getElementById('loginContainer').classList.remove('hidden');
                 document.getElementById('dashboard').classList.add('hidden');
@@ -380,6 +453,63 @@
             auth.signOut();
         });
 
+        // ========== LOAD SUMMARY STATS ==========
+        async function loadSummaryStats() {
+            try {
+                const devicesSnap = await db.collection('devices').get();
+                const devicesCount = devicesSnap.size;
+                document.getElementById('totalDevices').innerText = devicesCount;
+
+                const opsSnap = await db.collection('operations').get();
+                document.getElementById('totalOperations').innerText = opsSnap.size;
+
+                // Unique brands
+                const brands = new Set();
+                devicesSnap.forEach(doc => brands.add(doc.data().brand));
+                document.getElementById('uniqueBrands').innerText = brands.size;
+
+                // Last added device (by createdAt)
+                const lastAddedQuery = await db.collection('devices').orderBy('createdAt', 'desc').limit(1).get();
+                if (!lastAddedQuery.empty) {
+                    const last = lastAddedQuery.docs[0].data();
+                    document.getElementById('lastAdded').innerText = last.model || '—';
+                } else {
+                    document.getElementById('lastAdded').innerText = '—';
+                }
+            } catch (error) {
+                console.error('Stats error:', error);
+            }
+        }
+
+        // ========== RENDER TOOL CHECKBOXES ==========
+        function renderToolCheckboxes() {
+            const container = document.getElementById('toolsContainer');
+            container.innerHTML = '';
+            availableTools.forEach((tool, index) => {
+                const div = document.createElement('div');
+                div.className = 'form-check';
+                div.innerHTML = `
+                    <input class="form-check-input" type="checkbox" value="${tool}" id="tool_${index}">
+                    <label class="form-check-label" for="tool_${index}">${tool}</label>
+                `;
+                container.appendChild(div);
+            });
+        }
+
+        // ========== ADD NEW TOOL ==========
+        document.getElementById('addToolBtn').addEventListener('click', () => {
+            const newTool = document.getElementById('newToolName').value.trim();
+            if (newTool && !availableTools.includes(newTool)) {
+                availableTools.push(newTool);
+                renderToolCheckboxes();
+                document.getElementById('newToolName').value = '';
+            } else if (availableTools.includes(newTool)) {
+                alert('Tool already exists');
+            } else {
+                alert('Please enter a tool name');
+            }
+        });
+
         // ========== LOAD DEVICES TABLE ==========
         async function loadDevices() {
             const tbody = document.getElementById('devicesTableBody');
@@ -396,10 +526,15 @@
                 for (const doc of snapshot.docs) {
                     const d = doc.data();
                     const deviceId = doc.id;
-                    // Count operations
-                    const opsSnap = await db.collection('operations').where('deviceId', '==', deviceId).count().get();
-                    const opCount = opsSnap.data().count;
+                    // Count operations using snapshot.size (fix for .count error)
+                    const opsSnap = await db.collection('operations').where('deviceId', '==', deviceId).get();
+                    const opCount = opsSnap.size;
                     const patchRange = d.securityPatchMin ? `${d.securityPatchMin} to ${d.securityPatchMax}` : '—';
+                    // Escape quotes for inline onclick
+                    const brandEsc = d.brand.replace(/'/g, "\\'");
+                    const modelEsc = d.model.replace(/'/g, "\\'");
+                    const cpuEsc = (d.cpu || '').replace(/'/g, "\\'");
+                    const androidEsc = (d.androidVersion || '').replace(/'/g, "\\'");
                     html += `<tr>
                         <td>${d.brand}</td>
                         <td>${d.model}</td>
@@ -408,15 +543,31 @@
                         <td>${patchRange}</td>
                         <td>${opCount}</td>
                         <td class="action-icons">
-                            <i class="fas fa-edit" onclick="editDevice('${deviceId}', '${d.brand}', '${d.model}', '${d.cpu || ''}', '${d.androidVersion || ''}', '${d.securityPatchMin || ''}', '${d.securityPatchMax || ''}')"></i>
+                            <i class="fas fa-edit" onclick="editDevice('${deviceId}', '${brandEsc}', '${modelEsc}', '${cpuEsc}', '${androidEsc}', '${d.securityPatchMin || ''}', '${d.securityPatchMax || ''}')"></i>
                             <i class="fas fa-trash" onclick="deleteDevice('${deviceId}')"></i>
                         </td>
                     </tr>`;
                 }
                 tbody.innerHTML = html;
+                attachSearchFilter(); // attach filter after table loaded
             } catch (error) {
                 tbody.innerHTML = `<tr><td colspan="7" class="text-danger">Error: ${error.message}</td></tr>`;
             }
+        }
+
+        // ========== TABLE SEARCH FILTER ==========
+        function attachSearchFilter() {
+            const searchInput = document.getElementById('searchTable');
+            const table = document.querySelector('.table');
+            const rows = table.querySelectorAll('tbody tr');
+
+            searchInput.addEventListener('keyup', function() {
+                const term = this.value.toLowerCase();
+                rows.forEach(row => {
+                    const text = row.innerText.toLowerCase();
+                    row.style.display = text.includes(term) ? '' : 'none';
+                });
+            });
         }
 
         // ========== LOAD DEVICE DROPDOWN FOR OPERATION FORM ==========
@@ -471,6 +622,7 @@
                 resetDeviceForm();
                 loadDevices();
                 loadDeviceDropdown();
+                loadSummaryStats();
             } catch (error) {
                 alert('Error saving device: ' + error.message);
             }
@@ -503,23 +655,26 @@
                 await batch.commit();
                 loadDevices();
                 loadDeviceDropdown();
+                loadSummaryStats();
             } catch (error) {
                 alert('Delete error: ' + error.message);
             }
         };
 
-        // ========== ADD OPERATION ==========
+        // ========== ADD OPERATION (UPDATED) ==========
         document.getElementById('operationForm').addEventListener('submit', async (e) => {
             e.preventDefault();
 
             const deviceId = document.getElementById('opDeviceId').value;
             const opType = document.getElementById('opType').value;
             const mode = document.getElementById('opMode').value;
+            const details = document.getElementById('opDetails').value.trim(); // new field
             const successRate = document.getElementById('opSuccess').value;
             const testPointUrl = document.getElementById('testPointUrl').value.trim();
 
+            // Collect checked tools
             const tools = [];
-            document.querySelectorAll('.tool-checkbox-group input[type=checkbox]:checked').forEach(cb => {
+            document.querySelectorAll('#toolsContainer .form-check-input:checked').forEach(cb => {
                 tools.push(cb.value);
             });
 
@@ -533,6 +688,7 @@
                 operationType: opType,
                 requiredMode: mode,
                 tools,
+                operationDetails: details || null,   // new field
                 successRate,
                 testPointUrl: testPointUrl || null,
                 createdAt: firebase.firestore.FieldValue.serverTimestamp()
@@ -541,7 +697,10 @@
             try {
                 await db.collection('operations').add(operationData);
                 document.getElementById('operationForm').reset();
+                // Reset tools checkboxes (uncheck all)
+                document.querySelectorAll('#toolsContainer .form-check-input').forEach(cb => cb.checked = false);
                 loadDevices(); // refresh op count
+                loadSummaryStats();
                 alert('Operation added successfully');
             } catch (error) {
                 alert('Error adding operation: ' + error.message);
@@ -549,4 +708,4 @@
         });
     </script>
 </body>
-</html>
+        </html>

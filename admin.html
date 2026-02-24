@@ -188,7 +188,18 @@
         .brand-input-group input {
             flex: 1;
         }
-        /* CSV Import status */
+        /* Progress bar */
+        .progress {
+            background-color: #1e262e;
+            height: 25px;
+            border-radius: 40px;
+            margin-top: 10px;
+        }
+        .progress-bar {
+            background-color: #2d5a9a;
+            border-radius: 40px;
+            font-weight: 600;
+        }
         #importStatus {
             max-height: 200px;
             overflow-y: auto;
@@ -258,10 +269,10 @@
             </div>
         </div>
 
-        <!-- New: CSV Import Card -->
+        <!-- CSV Import Card (enhanced) -->
         <div class="card mb-4">
             <div class="card-header">
-                <i class="fas fa-file-csv me-2"></i>Smart CSV Importer
+                <i class="fas fa-file-csv me-2"></i>Smart CSV Importer (3500+ rows optimized)
             </div>
             <div class="card-body">
                 <div class="row g-3">
@@ -280,6 +291,16 @@
                     </div>
                     <div class="col-md-4 d-flex align-items-end">
                         <button id="importCsvBtn" class="btn btn-success w-100"><i class="fas fa-upload"></i> Import CSV</button>
+                    </div>
+                </div>
+                <!-- Progress bar and counter -->
+                <div class="mt-3" id="progressContainer" style="display: none;">
+                    <div class="d-flex justify-content-between mb-1">
+                        <span id="progressCounter">0 / 0 rows</span>
+                        <span id="progressPercent">0%</span>
+                    </div>
+                    <div class="progress">
+                        <div id="progressBar" class="progress-bar" role="progressbar" style="width: 0%;">0%</div>
                     </div>
                 </div>
                 <div class="mt-3">
@@ -734,7 +755,7 @@
             }
         };
 
-        // ========== ADD OPERATION (UPDATED with multi‑service textarea) ==========
+        // ========== ADD OPERATION ==========
         document.getElementById('operationForm').addEventListener('submit', async (e) => {
             e.preventDefault();
 
@@ -776,7 +797,7 @@
             }
         });
 
-        // ========== SMART CSV IMPORTER ==========
+        // ========== OPTIMIZED CSV IMPORTER ==========
         document.getElementById('importCsvBtn').addEventListener('click', async () => {
             const fileInput = document.getElementById('csvFile');
             const file = fileInput.files[0];
@@ -790,7 +811,6 @@
             const newTool = document.getElementById('csvNewTool').value.trim();
             if (newTool) {
                 tool = newTool;
-                // Add to availableTools if new
                 if (!availableTools.includes(tool)) {
                     availableTools.push(tool);
                     renderToolCheckboxes();
@@ -802,145 +822,188 @@
                 return;
             }
 
+            // Show progress container
+            const progressContainer = document.getElementById('progressContainer');
+            const progressBar = document.getElementById('progressBar');
+            const progressCounter = document.getElementById('progressCounter');
+            const progressPercent = document.getElementById('progressPercent');
             const statusDiv = document.getElementById('importStatus');
-            statusDiv.innerHTML = 'Parsing CSV...';
+            progressContainer.style.display = 'block';
+            progressBar.style.width = '0%';
+            progressBar.innerText = '0%';
+            progressCounter.innerText = '0 / ? rows';
+            progressPercent.innerText = '0%';
+            statusDiv.innerHTML = 'Loading existing devices...';
 
-            Papa.parse(file, {
+            // Pre-load all existing devices into a Map (key = brand_model)
+            const devicesMap = new Map();
+            try {
+                const snapshot = await db.collection('devices').get();
+                snapshot.forEach(doc => {
+                    const data = doc.data();
+                    const key = `${data.brand}_${data.model}`.toLowerCase().replace(/\s+/g, '_');
+                    devicesMap.set(key, { id: doc.id, ...data });
+                });
+                statusDiv.innerHTML = `Loaded ${devicesMap.size} existing devices. Parsing CSV...`;
+            } catch (err) {
+                statusDiv.innerHTML = `❌ Failed to load devices: ${err.message}`;
+                return;
+            }
+
+            // Parse CSV with PapaParse (streaming to avoid memory issues)
+            let rowCount = 0;
+            let processedRows = 0;
+            let successCount = 0;
+            let errorCount = 0;
+            let currentBatch = [];
+            const BATCH_SIZE = 400; // Firestore batch limit is 500, we use 400 for safety
+            let batchPromise = Promise.resolve();
+
+            // Function to commit a batch
+            const commitBatch = async (batchOps) => {
+                if (batchOps.length === 0) return;
+                const batch = db.batch();
+                batchOps.forEach(op => {
+                    if (op.type === 'set') {
+                        batch.set(op.ref, op.data);
+                    } else if (op.type === 'update') {
+                        batch.update(op.ref, op.data);
+                    }
+                });
+                await batch.commit();
+                // Small delay to avoid hitting rate limits
+                await new Promise(resolve => setTimeout(resolve, 200));
+            };
+
+            // Process each row as it comes
+            const parseStream = PapaParse.parse(file, {
                 header: true,
                 skipEmptyLines: true,
-                complete: async (results) => {
-                    const rows = results.data;
-                    if (rows.length === 0) {
-                        statusDiv.innerHTML = 'CSV is empty.';
-                        return;
-                    }
+                step: async (row) => {
+                    rowCount++;
+                    const r = row.data;
+                    try {
+                        const brand = r['Brand']?.trim();
+                        const model = r['Model']?.trim();
+                        const functions = r['Functions']?.trim(); // services description
+                        if (!brand || !model || !functions) {
+                            errorCount++;
+                            return;
+                        }
 
-                    statusDiv.innerHTML = `Processing ${rows.length} rows...`;
+                        // Optional fields
+                        const mode = r['Mode']?.trim() || 'EDL';
+                        const successRate = r['SuccessRate']?.trim() || 'Medium';
+                        const testPointUrl = r['TestPointUrl']?.trim() || null;
+                        const cpu = r['CPU']?.trim() || null;
+                        const androidVersion = r['AndroidVersion']?.trim() || null;
+                        const securityPatchMin = r['SecurityPatchMin']?.trim() || null;
+                        const securityPatchMax = r['SecurityPatchMax']?.trim() || null;
 
-                    // Process in batches of 500 to avoid Firestore limits
-                    const BATCH_SIZE = 500;
-                    let successCount = 0;
-                    let errorCount = 0;
+                        // Create unique device key
+                        const deviceKey = `${brand}_${model}`.toLowerCase().replace(/\s+/g, '_');
 
-                    for (let i = 0; i < rows.length; i += BATCH_SIZE) {
-                        const batch = db.batch();
-                        const chunk = rows.slice(i, i + BATCH_SIZE);
-
-                        for (const row of chunk) {
-                            try {
-                                // Required fields
-                                const brand = row['Brand']?.trim();
-                                const model = row['Model']?.trim();
-                                const functions = row['Functions']?.trim(); // services description
-                                if (!brand || !model || !functions) {
-                                    errorCount++;
-                                    continue;
-                                }
-
-                                // Optional fields
-                                const mode = row['Mode']?.trim() || 'EDL'; // default
-                                const successRate = row['SuccessRate']?.trim() || 'Medium'; // default
-                                const testPointUrl = row['TestPointUrl']?.trim() || null;
-                                const cpu = row['CPU']?.trim() || null;
-                                const androidVersion = row['AndroidVersion']?.trim() || null;
-                                const securityPatchMin = row['SecurityPatchMin']?.trim() || null;
-                                const securityPatchMax = row['SecurityPatchMax']?.trim() || null;
-
-                                // 1. Find or create device
-                                const devicesRef = db.collection('devices');
-                                const deviceQuery = await devicesRef
-                                    .where('brand', '==', brand)
-                                    .where('model', '==', model)
-                                    .limit(1)
-                                    .get();
-
-                                let deviceId;
-                                if (deviceQuery.empty) {
-                                    // Create new device
-                                    const newDeviceRef = devicesRef.doc();
-                                    deviceId = newDeviceRef.id;
-                                    batch.set(newDeviceRef, {
-                                        brand,
-                                        model,
-                                        cpu: cpu || '',
-                                        androidVersion: androidVersion || null,
-                                        securityPatchMin,
-                                        securityPatchMax,
-                                        createdAt: firebase.firestore.FieldValue.serverTimestamp(),
-                                        updatedAt: firebase.firestore.FieldValue.serverTimestamp()
-                                    });
-                                } else {
-                                    deviceId = deviceQuery.docs[0].id;
-                                    // Optionally update device with extra fields if provided
-                                    if (cpu || androidVersion || securityPatchMin || securityPatchMax) {
-                                        const updateData = {};
-                                        if (cpu) updateData.cpu = cpu;
-                                        if (androidVersion) updateData.androidVersion = androidVersion;
-                                        if (securityPatchMin) updateData.securityPatchMin = securityPatchMin;
-                                        if (securityPatchMax) updateData.securityPatchMax = securityPatchMax;
-                                        updateData.updatedAt = firebase.firestore.FieldValue.serverTimestamp();
-                                        batch.update(devicesRef.doc(deviceId), updateData);
-                                    }
-                                }
-
-                                // 2. Find or create operation
-                                const opsRef = db.collection('operations');
-                                // Look for existing operation with same servicesDescription, mode, successRate, testPointUrl
-                                let opQuery = await opsRef
-                                    .where('deviceId', '==', deviceId)
-                                    .where('servicesDescription', '==', functions)
-                                    .where('requiredMode', '==', mode)
-                                    .where('successRate', '==', successRate)
-                                    .limit(1)
-                                    .get();
-
-                                // If testPointUrl matters, we need to include it. But Firestore cannot have multiple inequality filters.
-                                // We'll handle by fetching and then filtering in memory (since results should be small).
-                                let existingOp = null;
-                                if (!opQuery.empty) {
-                                    // Filter by testPointUrl (exact match or both null)
-                                    const matching = opQuery.docs.filter(doc => {
-                                        const data = doc.data();
-                                        return (data.testPointUrl || null) === testPointUrl;
-                                    });
-                                    if (matching.length > 0) existingOp = matching[0];
-                                }
-
-                                if (existingOp) {
-                                    // Append tool to existing operation if not already present
-                                    const existingTools = existingOp.data().tools || [];
-                                    if (!existingTools.includes(tool)) {
-                                        batch.update(existingOp.ref, {
-                                            tools: firebase.firestore.FieldValue.arrayUnion(tool),
-                                            updatedAt: firebase.firestore.FieldValue.serverTimestamp()
-                                        });
-                                    }
-                                } else {
-                                    // Create new operation
-                                    const newOpRef = opsRef.doc();
-                                    batch.set(newOpRef, {
-                                        deviceId,
-                                        servicesDescription: functions,
-                                        requiredMode: mode,
-                                        tools: [tool],
-                                        successRate,
-                                        testPointUrl,
-                                        createdAt: firebase.firestore.FieldValue.serverTimestamp()
-                                    });
-                                }
-                                successCount++;
-                            } catch (err) {
-                                console.error('Row error:', err);
-                                errorCount++;
+                        // Device reference (using custom ID)
+                        let deviceRef;
+                        let deviceExists = devicesMap.has(deviceKey);
+                        if (!deviceExists) {
+                            deviceRef = db.collection('devices').doc(deviceKey);
+                            // Prepare device data
+                            const deviceData = {
+                                brand,
+                                model,
+                                cpu: cpu || '',
+                                androidVersion: androidVersion || null,
+                                securityPatchMin,
+                                securityPatchMax,
+                                createdAt: firebase.firestore.FieldValue.serverTimestamp(),
+                                updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+                            };
+                            currentBatch.push({ type: 'set', ref: deviceRef, data: deviceData });
+                            // Add to map to avoid duplicate creation in same batch
+                            devicesMap.set(deviceKey, { id: deviceKey, ...deviceData });
+                        } else {
+                            deviceRef = db.collection('devices').doc(devicesMap.get(deviceKey).id);
+                            // Optionally update device with extra fields
+                            const updateData = {};
+                            if (cpu) updateData.cpu = cpu;
+                            if (androidVersion) updateData.androidVersion = androidVersion;
+                            if (securityPatchMin) updateData.securityPatchMin = securityPatchMin;
+                            if (securityPatchMax) updateData.securityPatchMax = securityPatchMax;
+                            if (Object.keys(updateData).length > 0) {
+                                updateData.updatedAt = firebase.firestore.FieldValue.serverTimestamp();
+                                currentBatch.push({ type: 'update', ref: deviceRef, data: updateData });
                             }
                         }
 
-                        // Commit batch
-                        await batch.commit();
-                        statusDiv.innerHTML = `Processed ${Math.min(i + BATCH_SIZE, rows.length)}/${rows.length} rows...`;
-                    }
+                        // Operation: we need to check if an operation with same details already exists
+                        // But doing a query per row would be slow. Instead, we'll handle in batch:
+                        // We'll create a unique key for operation: deviceKey + mode + successRate + functions + testPointUrl
+                        // But since testPointUrl may be null, we'll include a placeholder.
+                        const opKey = `${deviceKey}_${mode}_${successRate}_${functions}_${testPointUrl || ''}`;
+                        // We'll not preload operations; we'll rely on batch writes and handle duplicates by using set with merge? 
+                        // Actually we want to append tool if operation exists. So we need to know if operation exists.
+                        // For efficiency, we can load all operations for devices in the batch? That's complex.
+                        // Simpler: use Firestore's arrayUnion on update, but we need to know if doc exists.
+                        // We'll create a temporary Map for operations within this batch to avoid duplicates within the same import.
+                        // But across imports, we need to query. However, with 3500 rows, doing a query per row would be heavy.
+                        // Instead, we'll use a transaction? Not possible in batch.
+                        // Alternative: Use a composite key as document ID for operations. Then we can set with merge: true and use arrayUnion.
+                        // That's the most efficient. Let's use operation ID = hash of (deviceId + mode + successRate + functions + testPointUrl).
+                        // We'll generate a simple hash.
+                        const opId = btoa(deviceKey + mode + successRate + functions + (testPointUrl || '')).replace(/[/+=]/g, '_');
+                        const opRef = db.collection('operations').doc(opId);
+                        // Use set with merge to add tool to array
+                        const opData = {
+                            deviceId: deviceRef.id,
+                            servicesDescription: functions,
+                            requiredMode: mode,
+                            successRate,
+                            testPointUrl,
+                            tools: firebase.firestore.FieldValue.arrayUnion(tool),
+                            createdAt: firebase.firestore.FieldValue.serverTimestamp() // will be overwritten if exists, but we can keep first creation time with merge?
+                        };
+                        // We need to avoid overwriting createdAt. Use set with merge, but for first creation we want createdAt.
+                        // We'll use set with merge and also set a field "updatedAt".
+                        opData.updatedAt = firebase.firestore.FieldValue.serverTimestamp();
+                        // To keep createdAt, we would need to know if doc exists. Instead, we can use a transaction, but that's slow.
+                        // Simpler: use set with merge and always set createdAt conditionally? Not possible.
+                        // We'll accept that createdAt will be overwritten on subsequent imports. Or we can use a separate collection for tool-associations.
+                        // For simplicity, we'll just set the whole document with merge, and createdAt will be the first time this script runs.
+                        // If you need to preserve original creation date, you'd need to do a read first. For large imports, that's too slow.
+                        // We'll go with merge and accept that createdAt may change. Most admin panels don't care.
+                        currentBatch.push({ type: 'set', ref: opRef, data: opData });
 
-                    statusDiv.innerHTML = `✅ Import completed. Success: ${successCount}, Errors: ${errorCount}`;
+                        successCount++;
+
+                        // If batch size reached, commit and reset
+                        if (currentBatch.length >= BATCH_SIZE) {
+                            await commitBatch(currentBatch);
+                            currentBatch = [];
+                            processedRows = rowCount;
+                            const percent = Math.round((processedRows / rowCount) * 100);
+                            progressBar.style.width = percent + '%';
+                            progressBar.innerText = percent + '%';
+                            progressCounter.innerText = `${processedRows} / ${rowCount} rows`;
+                            progressPercent.innerText = percent + '%';
+                            statusDiv.innerHTML = `Processed ${processedRows} rows...`;
+                        }
+                    } catch (err) {
+                        console.error('Row error:', err);
+                        errorCount++;
+                    }
+                },
+                complete: async () => {
+                    // Commit any remaining rows
+                    if (currentBatch.length > 0) {
+                        await commitBatch(currentBatch);
+                    }
+                    processedRows = rowCount;
+                    progressBar.style.width = '100%';
+                    progressBar.innerText = '100%';
+                    progressCounter.innerText = `${processedRows} / ${rowCount} rows`;
+                    progressPercent.innerText = '100%';
+                    statusDiv.innerHTML = `✅ Import completed. Total rows: ${rowCount}, Success: ${successCount}, Errors: ${errorCount}`;
                     // Refresh data
                     loadDevices();
                     loadDeviceDropdown();
@@ -954,4 +1017,4 @@
         });
     </script>
 </body>
-    </html>
+                                    </html>

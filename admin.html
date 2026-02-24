@@ -4,10 +4,12 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Chip2Unlock · Admin Panel</title>
-    <!-- Bootstrap 5 (dark theme customised) -->
+    <!-- Bootstrap 5 (dark theme) -->
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0-alpha1/dist/css/bootstrap.min.css" rel="stylesheet">
     <!-- Font Awesome -->
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+    <!-- PapaParse for CSV -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.3.2/papaparse.min.js"></script>
     <!-- Firebase SDK (compat) -->
     <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-app-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-auth-compat.js"></script>
@@ -186,6 +188,15 @@
         .brand-input-group input {
             flex: 1;
         }
+        /* CSV Import status */
+        #importStatus {
+            max-height: 200px;
+            overflow-y: auto;
+            background: #1a2128;
+            border-radius: 12px;
+            padding: 10px;
+            font-size: 0.9rem;
+        }
     </style>
 </head>
 <body>
@@ -243,6 +254,40 @@
                 <div class="stat-card">
                     <div class="stat-value" id="uniqueBrands">0</div>
                     <div class="stat-label">Brands</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- New: CSV Import Card -->
+        <div class="card mb-4">
+            <div class="card-header">
+                <i class="fas fa-file-csv me-2"></i>Smart CSV Importer
+            </div>
+            <div class="card-body">
+                <div class="row g-3">
+                    <div class="col-md-4">
+                        <label class="form-label">Select Tool for this CSV</label>
+                        <div class="d-flex gap-2">
+                            <select id="csvToolSelect" class="form-select">
+                                <option value="">-- Choose existing tool --</option>
+                            </select>
+                            <input type="text" id="csvNewTool" class="form-control" placeholder="Or type new tool">
+                        </div>
+                    </div>
+                    <div class="col-md-4">
+                        <label class="form-label">CSV File</label>
+                        <input type="file" id="csvFile" accept=".csv" class="form-control">
+                    </div>
+                    <div class="col-md-4 d-flex align-items-end">
+                        <button id="importCsvBtn" class="btn btn-success w-100"><i class="fas fa-upload"></i> Import CSV</button>
+                    </div>
+                </div>
+                <div class="mt-3">
+                    <label class="form-label">Import Log</label>
+                    <div id="importStatus" class="text-secondary">Ready</div>
+                </div>
+                <div class="mt-2 small text-secondary">
+                    <strong>Expected CSV columns:</strong> Brand, Model, Functions (required), Mode, SuccessRate, TestPointUrl, CPU, AndroidVersion, SecurityPatchMin, SecurityPatchMax (last four optional).
                 </div>
             </div>
         </div>
@@ -428,6 +473,7 @@
                 loadDeviceDropdown();
                 loadBrandDatalist();
                 renderToolCheckboxes();
+                populateToolDropdown();
             } else {
                 document.getElementById('loginContainer').classList.remove('hidden');
                 document.getElementById('dashboard').classList.add('hidden');
@@ -517,6 +563,7 @@
             if (newTool && !availableTools.includes(newTool)) {
                 availableTools.push(newTool);
                 renderToolCheckboxes();
+                populateToolDropdown();
                 document.getElementById('newToolName').value = '';
             } else if (availableTools.includes(newTool)) {
                 alert('Tool already exists');
@@ -524,6 +571,18 @@
                 alert('Please enter a tool name');
             }
         });
+
+        // Populate CSV tool dropdown
+        function populateToolDropdown() {
+            const select = document.getElementById('csvToolSelect');
+            select.innerHTML = '<option value="">-- Choose existing tool --</option>';
+            availableTools.forEach(tool => {
+                const opt = document.createElement('option');
+                opt.value = tool;
+                opt.textContent = tool;
+                select.appendChild(opt);
+            });
+        }
 
         // ========== LOAD DEVICES TABLE ==========
         async function loadDevices() {
@@ -680,7 +739,7 @@
             e.preventDefault();
 
             const deviceId = document.getElementById('opDeviceId').value;
-            const servicesDesc = document.getElementById('servicesDesc').value.trim(); // new multi‑service field
+            const servicesDesc = document.getElementById('servicesDesc').value.trim();
             const mode = document.getElementById('opMode').value;
             const successRate = document.getElementById('opSuccess').value;
             const testPointUrl = document.getElementById('testPointUrl').value.trim();
@@ -697,7 +756,7 @@
 
             const operationData = {
                 deviceId,
-                servicesDescription: servicesDesc,   // new field storing the multi‑service text
+                servicesDescription: servicesDesc,
                 requiredMode: mode,
                 tools,
                 successRate,
@@ -716,6 +775,183 @@
                 alert('Error adding operation: ' + error.message);
             }
         });
+
+        // ========== SMART CSV IMPORTER ==========
+        document.getElementById('importCsvBtn').addEventListener('click', async () => {
+            const fileInput = document.getElementById('csvFile');
+            const file = fileInput.files[0];
+            if (!file) {
+                alert('Please select a CSV file');
+                return;
+            }
+
+            // Determine tool
+            let tool = document.getElementById('csvToolSelect').value;
+            const newTool = document.getElementById('csvNewTool').value.trim();
+            if (newTool) {
+                tool = newTool;
+                // Add to availableTools if new
+                if (!availableTools.includes(tool)) {
+                    availableTools.push(tool);
+                    renderToolCheckboxes();
+                    populateToolDropdown();
+                }
+            }
+            if (!tool) {
+                alert('Please select or type a tool name');
+                return;
+            }
+
+            const statusDiv = document.getElementById('importStatus');
+            statusDiv.innerHTML = 'Parsing CSV...';
+
+            Papa.parse(file, {
+                header: true,
+                skipEmptyLines: true,
+                complete: async (results) => {
+                    const rows = results.data;
+                    if (rows.length === 0) {
+                        statusDiv.innerHTML = 'CSV is empty.';
+                        return;
+                    }
+
+                    statusDiv.innerHTML = `Processing ${rows.length} rows...`;
+
+                    // Process in batches of 500 to avoid Firestore limits
+                    const BATCH_SIZE = 500;
+                    let successCount = 0;
+                    let errorCount = 0;
+
+                    for (let i = 0; i < rows.length; i += BATCH_SIZE) {
+                        const batch = db.batch();
+                        const chunk = rows.slice(i, i + BATCH_SIZE);
+
+                        for (const row of chunk) {
+                            try {
+                                // Required fields
+                                const brand = row['Brand']?.trim();
+                                const model = row['Model']?.trim();
+                                const functions = row['Functions']?.trim(); // services description
+                                if (!brand || !model || !functions) {
+                                    errorCount++;
+                                    continue;
+                                }
+
+                                // Optional fields
+                                const mode = row['Mode']?.trim() || 'EDL'; // default
+                                const successRate = row['SuccessRate']?.trim() || 'Medium'; // default
+                                const testPointUrl = row['TestPointUrl']?.trim() || null;
+                                const cpu = row['CPU']?.trim() || null;
+                                const androidVersion = row['AndroidVersion']?.trim() || null;
+                                const securityPatchMin = row['SecurityPatchMin']?.trim() || null;
+                                const securityPatchMax = row['SecurityPatchMax']?.trim() || null;
+
+                                // 1. Find or create device
+                                const devicesRef = db.collection('devices');
+                                const deviceQuery = await devicesRef
+                                    .where('brand', '==', brand)
+                                    .where('model', '==', model)
+                                    .limit(1)
+                                    .get();
+
+                                let deviceId;
+                                if (deviceQuery.empty) {
+                                    // Create new device
+                                    const newDeviceRef = devicesRef.doc();
+                                    deviceId = newDeviceRef.id;
+                                    batch.set(newDeviceRef, {
+                                        brand,
+                                        model,
+                                        cpu: cpu || '',
+                                        androidVersion: androidVersion || null,
+                                        securityPatchMin,
+                                        securityPatchMax,
+                                        createdAt: firebase.firestore.FieldValue.serverTimestamp(),
+                                        updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+                                    });
+                                } else {
+                                    deviceId = deviceQuery.docs[0].id;
+                                    // Optionally update device with extra fields if provided
+                                    if (cpu || androidVersion || securityPatchMin || securityPatchMax) {
+                                        const updateData = {};
+                                        if (cpu) updateData.cpu = cpu;
+                                        if (androidVersion) updateData.androidVersion = androidVersion;
+                                        if (securityPatchMin) updateData.securityPatchMin = securityPatchMin;
+                                        if (securityPatchMax) updateData.securityPatchMax = securityPatchMax;
+                                        updateData.updatedAt = firebase.firestore.FieldValue.serverTimestamp();
+                                        batch.update(devicesRef.doc(deviceId), updateData);
+                                    }
+                                }
+
+                                // 2. Find or create operation
+                                const opsRef = db.collection('operations');
+                                // Look for existing operation with same servicesDescription, mode, successRate, testPointUrl
+                                let opQuery = await opsRef
+                                    .where('deviceId', '==', deviceId)
+                                    .where('servicesDescription', '==', functions)
+                                    .where('requiredMode', '==', mode)
+                                    .where('successRate', '==', successRate)
+                                    .limit(1)
+                                    .get();
+
+                                // If testPointUrl matters, we need to include it. But Firestore cannot have multiple inequality filters.
+                                // We'll handle by fetching and then filtering in memory (since results should be small).
+                                let existingOp = null;
+                                if (!opQuery.empty) {
+                                    // Filter by testPointUrl (exact match or both null)
+                                    const matching = opQuery.docs.filter(doc => {
+                                        const data = doc.data();
+                                        return (data.testPointUrl || null) === testPointUrl;
+                                    });
+                                    if (matching.length > 0) existingOp = matching[0];
+                                }
+
+                                if (existingOp) {
+                                    // Append tool to existing operation if not already present
+                                    const existingTools = existingOp.data().tools || [];
+                                    if (!existingTools.includes(tool)) {
+                                        batch.update(existingOp.ref, {
+                                            tools: firebase.firestore.FieldValue.arrayUnion(tool),
+                                            updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+                                        });
+                                    }
+                                } else {
+                                    // Create new operation
+                                    const newOpRef = opsRef.doc();
+                                    batch.set(newOpRef, {
+                                        deviceId,
+                                        servicesDescription: functions,
+                                        requiredMode: mode,
+                                        tools: [tool],
+                                        successRate,
+                                        testPointUrl,
+                                        createdAt: firebase.firestore.FieldValue.serverTimestamp()
+                                    });
+                                }
+                                successCount++;
+                            } catch (err) {
+                                console.error('Row error:', err);
+                                errorCount++;
+                            }
+                        }
+
+                        // Commit batch
+                        await batch.commit();
+                        statusDiv.innerHTML = `Processed ${Math.min(i + BATCH_SIZE, rows.length)}/${rows.length} rows...`;
+                    }
+
+                    statusDiv.innerHTML = `✅ Import completed. Success: ${successCount}, Errors: ${errorCount}`;
+                    // Refresh data
+                    loadDevices();
+                    loadDeviceDropdown();
+                    loadBrandDatalist();
+                    loadSummaryStats();
+                },
+                error: (err) => {
+                    statusDiv.innerHTML = `❌ CSV parsing error: ${err.message}`;
+                }
+            });
+        });
     </script>
 </body>
-                                    </html>
+    </html>

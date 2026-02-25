@@ -15,6 +15,7 @@
     <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-auth-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-firestore-compat.js"></script>
     <style>
+        /* (your existing styles - unchanged) */
         body {
             background-color: #0a0c0f;
             color: #e9ecef;
@@ -269,10 +270,10 @@
             </div>
         </div>
 
-        <!-- CSV Import Card (optimised for 3500+ rows) -->
+        <!-- CSV Import Card (enhanced) -->
         <div class="card mb-4">
             <div class="card-header">
-                <i class="fas fa-file-csv me-2"></i>Smart CSV Importer
+                <i class="fas fa-file-csv me-2"></i>Smart CSV Importer (3500+ rows optimized)
             </div>
             <div class="card-body">
                 <div class="row g-3">
@@ -308,8 +309,8 @@
                     <div id="importStatus" class="text-secondary">Ready</div>
                 </div>
                 <div class="mt-2 small text-secondary">
-                    <strong>Expected CSV columns:</strong> Brand, Model, Functions (required), Mode, SuccessRate, TestPointUrl, CPU, AndroidVersion, SecurityPatchMin, SecurityPatchMax (last four optional).<br>
-                    <em>Functions</em> should describe the services (e.g., "FRP + Mi Account + Bootloader Unlock").
+                    <strong>Expected CSV columns:</strong> Brand, Model, Device Name (optional), System-on-Chip (optional), Functions (required).<br>
+                    <em>Other columns (Mode, SuccessRate, etc.) are optional and will default to standard values.</em>
                 </div>
             </div>
         </div>
@@ -325,7 +326,7 @@
                         <form id="deviceForm">
                             <input type="hidden" id="deviceId" value="">
                             
-                            <!-- Brand input with datalist (you can type any brand) -->
+                            <!-- Brand input with datalist -->
                             <div class="mb-3">
                                 <label class="form-label">Brand</label>
                                 <div class="brand-input-group">
@@ -383,7 +384,7 @@
                                 </select>
                             </div>
 
-                            <!-- Multi-line operation description -->
+                            <!-- Replaced dropdown with textarea for multi‑service description -->
                             <div class="mb-3">
                                 <label class="form-label">Services / Operations Description</label>
                                 <textarea class="form-control" id="servicesDesc" rows="3" placeholder="e.g., FRP + Mi Account + Bootloader Unlock + Network Fix" required></textarea>
@@ -798,7 +799,7 @@
             }
         });
 
-        // ========== OPTIMIZED CSV IMPORTER (3500+ rows) ==========
+        // ========== OPTIMIZED CSV IMPORTER (updated to handle your CSV columns) ==========
         document.getElementById('importCsvBtn').addEventListener('click', async () => {
             const fileInput = document.getElementById('csvFile');
             const file = fileInput.files[0];
@@ -853,6 +854,7 @@
 
             // Parse CSV with PapaParse (streaming to avoid memory issues)
             let rowCount = 0;
+            let processedRows = 0;
             let successCount = 0;
             let errorCount = 0;
             let currentBatch = [];
@@ -882,19 +884,22 @@
                     rowCount++;
                     const r = row.data;
                     try {
-                        const brand = r['Brand']?.trim();
-                        const model = r['Model']?.trim();
-                        const functions = r['Functions']?.trim(); // services description
+                        // Handle columns case‑insensitively and map to expected fields
+                        const brand = (r['brand'] || r['Brand'] || '').trim();
+                        const model = (r['model'] || r['Model'] || '').trim();
+                        const functions = (r['Functions'] || r['functions'] || '').trim(); // services description
+                        const deviceName = (r['Device Name'] || r['DeviceName'] || '').trim() || null;
+                        const soc = (r['System-on-Chip'] || r['System_on_Chip'] || r['CPU'] || '').trim() || null;
+
                         if (!brand || !model || !functions) {
                             errorCount++;
                             return;
                         }
 
-                        // Optional fields
+                        // Optional fields (defaults)
                         const mode = r['Mode']?.trim() || 'EDL';
                         const successRate = r['SuccessRate']?.trim() || 'Medium';
                         const testPointUrl = r['TestPointUrl']?.trim() || null;
-                        const cpu = r['CPU']?.trim() || null;               // System-on-Chip
                         const androidVersion = r['AndroidVersion']?.trim() || null;
                         const securityPatchMin = r['SecurityPatchMin']?.trim() || null;
                         const securityPatchMax = r['SecurityPatchMax']?.trim() || null;
@@ -907,10 +912,12 @@
                         let deviceExists = devicesMap.has(deviceKey);
                         if (!deviceExists) {
                             deviceRef = db.collection('devices').doc(deviceKey);
+                            // Prepare device data
                             const deviceData = {
                                 brand,
                                 model,
-                                cpu: cpu || '',
+                                deviceName: deviceName,          // store the friendly name (optional)
+                                cpu: soc || '',
                                 androidVersion: androidVersion || null,
                                 securityPatchMin,
                                 securityPatchMax,
@@ -918,12 +925,14 @@
                                 updatedAt: firebase.firestore.FieldValue.serverTimestamp()
                             };
                             currentBatch.push({ type: 'set', ref: deviceRef, data: deviceData });
-                            devicesMap.set(deviceKey, { id: deviceKey, ...deviceData }); // add to map to avoid duplicate creation in same batch
+                            // Add to map to avoid duplicate creation in same batch
+                            devicesMap.set(deviceKey, { id: deviceKey, ...deviceData });
                         } else {
                             deviceRef = db.collection('devices').doc(devicesMap.get(deviceKey).id);
-                            // Optionally update device with extra fields
+                            // Optionally update device with extra fields if they are provided
                             const updateData = {};
-                            if (cpu) updateData.cpu = cpu;
+                            if (deviceName) updateData.deviceName = deviceName;
+                            if (soc) updateData.cpu = soc;
                             if (androidVersion) updateData.androidVersion = androidVersion;
                             if (securityPatchMin) updateData.securityPatchMin = securityPatchMin;
                             if (securityPatchMax) updateData.securityPatchMax = securityPatchMax;
@@ -955,12 +964,13 @@
                         if (currentBatch.length >= BATCH_SIZE) {
                             await commitBatch(currentBatch);
                             currentBatch = [];
-                            const percent = Math.round((rowCount / rowCount) * 100); // but we don't know total rows until complete
-                            // We'll update progress after each batch with current rowCount / estimated total? Not known.
-                            // Better: update after each batch with the actual processed count.
-                            progressCounter.innerText = `${rowCount} rows processed`;
-                            progressBar.style.width = '?%'; // can't calculate total yet
-                            statusDiv.innerHTML = `Processed ${rowCount} rows...`;
+                            processedRows = rowCount;
+                            const percent = Math.round((processedRows / rowCount) * 100);
+                            progressBar.style.width = percent + '%';
+                            progressBar.innerText = percent + '%';
+                            progressCounter.innerText = `${processedRows} / ${rowCount} rows`;
+                            progressPercent.innerText = percent + '%';
+                            statusDiv.innerHTML = `Processed ${processedRows} rows...`;
                         }
                     } catch (err) {
                         console.error('Row error:', err);
@@ -972,9 +982,10 @@
                     if (currentBatch.length > 0) {
                         await commitBatch(currentBatch);
                     }
+                    processedRows = rowCount;
                     progressBar.style.width = '100%';
                     progressBar.innerText = '100%';
-                    progressCounter.innerText = `${rowCount} / ${rowCount} rows`;
+                    progressCounter.innerText = `${processedRows} / ${rowCount} rows`;
                     progressPercent.innerText = '100%';
                     statusDiv.innerHTML = `✅ Import completed. Total rows: ${rowCount}, Success: ${successCount}, Errors: ${errorCount}`;
                     // Refresh data
@@ -990,4 +1001,4 @@
         });
     </script>
 </body>
-                            </html>
+                        </html>
